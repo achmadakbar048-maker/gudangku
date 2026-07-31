@@ -11,7 +11,7 @@ import {
   LogOut, Bell, ArrowUp, ArrowDown, Download, FileSpreadsheet, Printer,
   Building2, Mail, MessageCircle, Lock, User, Settings, ArrowRightLeft,
   PackagePlus, PackageMinus, CheckCircle2, XCircle, Info, FileText, Tags,
-  Sparkles, ChevronLeft, ChevronRight
+  Sparkles, ChevronLeft, ChevronRight, Database
 } from "lucide-react";
 import LoginAnimation from "./LoginAnimation";
 
@@ -34,12 +34,11 @@ class ErrorBoundary extends React.Component {
 
 // ---------- Aset Logo ----------
 // Ikon rumah + gembok, digambar sebagai SVG (bukan raster) supaya tajam di semua ukuran.
-const LOGO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <path d="M32 6 L58 27 L52 27 L52 32 L12 32 L12 27 L6 27 Z" fill="#EDEFF2"/>
-  <rect x="13" y="30" width="38" height="27" rx="4" fill="#EDEFF2"/>
-  <rect x="22" y="36" width="20" height="17" rx="4" fill="#3FA796"/>
-  <path d="M27 36 v-5 a5 5 0 0 1 10 0 v5" fill="none" stroke="#3FA796" stroke-width="3.4" stroke-linecap="round"/>
-  <circle cx="32" cy="43.5" r="2.2" fill="#EDEFF2"/>
+const LOGO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EDEFF2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+  <circle cx="12" cy="14" r="2" fill="#1DB9A0" stroke="none"></circle>
+  <path d="M11 15h2v3h-2z" fill="#1DB9A0" stroke="none"></path>
 </svg>`;
 const LOGO_ICON = `data:image/svg+xml,${encodeURIComponent(LOGO_ICON_SVG)}`;
 
@@ -49,7 +48,7 @@ function Logo({ ukuranIkon = 26, ukuranTeks = 18 }) {
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <img src={LOGO_ICON} alt="GudangKu" style={{ width: ukuranIkon, height: "auto" }} />
       <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: ukuranTeks, color: "#EDEFF2" }}>
-        Gudang<span style={{ color: "#3FA796" }}>Ku</span>
+        Gudang<span style={{ color: "#1DB9A0" }}>Ku</span>
       </span>
     </div>
   );
@@ -484,7 +483,7 @@ export default function InventoryApp() {
   const [invoiceTampil, setInvoiceTampil] = useState(null);
   const [errorForm, setErrorForm] = useState("");
   const [toasts, setToasts] = useState([]);
-  const [settings, setSettings] = useState(() => loadLS("settings", { theme: "dark", waNumber: "6281234567890", notifSchedule: "08:30", autoNotify: false }));
+  const [settings, setSettings] = useState(() => loadLS("settings", { theme: "dark", waNumber: "6281234567890", notifSchedule: "08:30", autoNotify: false, hargaVisibility: {} }));
   const lastNotifyTimeRef = useRef(null);
 
   // Simpan otomatis ke localStorage setiap kali data berubah, supaya tidak hilang saat refresh.
@@ -533,7 +532,7 @@ export default function InventoryApp() {
   }
 
   function simpanSettingsKeSupabase(s) {
-    supabase.from("app_settings").upsert({ id: 1, theme: s.theme, wa_number: s.waNumber, notif_schedule: s.notifSchedule, auto_notify: s.autoNotify }).then(({ error }) => {
+    supabase.from("app_settings").upsert({ id: 1, theme: s.theme, wa_number: s.waNumber, notif_schedule: s.notifSchedule, auto_notify: s.autoNotify, harga_visibility: s.hargaVisibility || {} }).then(({ error }) => {
       if (error) { console.error("Supabase settings:", error); pushToast("error", "Gagal menyimpan pengaturan ke server."); }
     });
   }
@@ -605,7 +604,7 @@ export default function InventoryApp() {
           if (r.data) setRiwayatHarga(r.data.map(row => keCamel(row, "riwayat_harga")));
         }
 
-        if (st.data) setSettings(prev => ({ ...prev, theme: st.data.theme, waNumber: st.data.wa_number, notifSchedule: st.data.notif_schedule, autoNotify: st.data.auto_notify }));
+        if (st.data) setSettings(prev => ({ ...prev, theme: st.data.theme, waNumber: st.data.wa_number, notifSchedule: st.data.notif_schedule, autoNotify: st.data.auto_notify, hargaVisibility: st.data.harga_visibility || {} }));
         if (c.data) setNextMutasiNo(c.data.value);
       } catch (e) {
         console.error("Gagal memuat data dari server:", e);
@@ -745,6 +744,15 @@ export default function InventoryApp() {
     return <LoginView onLogin={setCurrentUser} onKembali={() => setTampilLanding(true)} />;
   }
 
+  // Admin selalu bisa lihat harga. Untuk akun gudang/staf, tergantung pengaturan
+  // yang dipilih admin per gudang (default: tampil, kecuali admin sengaja menyembunyikannya).
+  const bisaLihatHarga = isAdmin || settings.hargaVisibility?.[currentUser.gudang] !== false;
+
+  function setHargaVisibility(gudang, tampil) {
+    const baru = { ...settings, hargaVisibility: { ...(settings.hargaVisibility || {}), [gudang]: tampil } };
+    simpanSettings(baru);
+  }
+
   // ---------- Logic CRUD Kategori ----------
   function tambahKategori(nama, prefix, warna) {
     if (!nama.trim()) return "Nama kategori wajib diisi.";
@@ -792,7 +800,7 @@ export default function InventoryApp() {
   function simpanProduk(data) {
     if (!data.nama.trim() || !data.kategori) { setErrorForm("Nama dan kategori wajib diisi."); return; }
     if (!data.satuan) { setErrorForm("Satuan wajib dipilih."); return; }
-    if (data.hargaJual <= data.hargaBeli) { setErrorForm("Harga jual harus lebih besar dari harga beli."); return; }
+    if (bisaLihatHarga && data.hargaJual <= data.hargaBeli) { setErrorForm("Harga jual harus lebih besar dari harga beli."); return; }
     if (data.stok < 0 || data.stokMin < 0) { setErrorForm("Stok tidak boleh negatif."); return; }
 
     if (data.id) {
@@ -812,19 +820,41 @@ export default function InventoryApp() {
       simpanKeSupabase("products", data);
       pushToast("success", `Produk "${data.nama}" berhasil diperbarui.`);
     } else {
-      const kat = categories.find(c => c.nama === data.kategori);
-      const nomorUrut = (kat?.counter || 0) + 1;
-      const kodeBarang = `${kat?.prefix || "GEN"}-${pad(nomorUrut, 3)}`;
-      if (kat) {
-        const katDiperbarui = { ...kat, counter: nomorUrut };
-        setCategories(prev => prev.map(c => c.id === kat.id ? katDiperbarui : c));
-        simpanKeSupabase("categories", katDiperbarui);
+      // Kalau nama produk ini sudah pernah diinput sebelumnya (di gudang manapun),
+      // pakai ulang kode barang yang sama -- jangan buat kode baru / menambah nomor urut kategori.
+      const produkSerupa = products.find(p => p.nama.trim().toLowerCase() === data.nama.trim().toLowerCase());
+      let kodeBarang;
+      if (produkSerupa) {
+        kodeBarang = produkSerupa.kodeBarang;
+      } else {
+        const kat = categories.find(c => c.nama === data.kategori);
+        const nomorUrut = (kat?.counter || 0) + 1;
+        kodeBarang = `${kat?.prefix || "GEN"}-${pad(nomorUrut, 3)}`;
+        if (kat) {
+          const katDiperbarui = { ...kat, counter: nomorUrut };
+          setCategories(prev => prev.map(c => c.id === kat.id ? katDiperbarui : c));
+          simpanKeSupabase("categories", katDiperbarui);
+        }
       }
       const idBaru = uid();
       const createdAt = new Date().toISOString();
       const produkBaru = { ...data, id: idBaru, kodeBarang, createdAt };
       setProducts(prev => [...prev, produkBaru]);
       simpanKeSupabase("products", produkBaru);
+
+      // Sinkronkan dengan Riwayat Harga: harga awal produk baru dicatat supaya langsung
+      // muncul di halaman Riwayat Harga (bukan hanya perubahan harga berikutnya).
+      const riwayatAwal = [];
+      if (data.hargaBeli > 0) {
+        riwayatAwal.push({ id: uid(), produkId: idBaru, namaProduk: data.nama, kodeBarang, field: "Harga Beli", hargaLama: 0, hargaBaru: data.hargaBeli, tanggal: createdAt });
+      }
+      if (data.hargaJual > 0) {
+        riwayatAwal.push({ id: uid(), produkId: idBaru, namaProduk: data.nama, kodeBarang, field: "Harga Jual", hargaLama: 0, hargaBaru: data.hargaJual, tanggal: createdAt });
+      }
+      if (riwayatAwal.length) {
+        setRiwayatHarga(prev => [...riwayatAwal, ...prev]);
+        simpanBanyakKeSupabase("riwayat_harga", riwayatAwal);
+      }
 
       // Sinkronkan dengan Mutasi Barang: stok awal produk baru dicatat sebagai transaksi "Masuk"
       // supaya produk baru langsung muncul di menu Mutasi, KPI, dan grafik terkait.
@@ -1080,6 +1110,7 @@ export default function InventoryApp() {
   const NAV = [
     { id: "dashboard", label: "Dashboard", ikon: LayoutDashboard },
     { id: "inventory", label: "Inventori", ikon: Boxes },
+    { id: "masterdata", label: "Master Data", ikon: Database },
     { id: "mutasi", label: "Mutasi Barang", ikon: ArrowRightLeft },
     { id: "sales", label: "Penjualan", ikon: Receipt },
     { id: "reports", label: "Laporan", ikon: BarChart3 },
@@ -1219,7 +1250,7 @@ export default function InventoryApp() {
             <DashboardView nilaiTotalStok={nilaiTotalStok} totalItems={productsGudang.length} stokMenipis={stokMenipis}
               totalPendapatan={totalPendapatan} totalProfit={totalProfit} totalTransaksi={totalTransaksi}
               mutasiHariIni={mutasiHariIni} trenHarian={trenHarian} produkTerlaris={produkTerlaris}
-              distribusiKategori={distribusiKategori} warnaKategoriMap={warnaKategoriMap} />
+              distribusiKategori={distribusiKategori} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
 
@@ -1227,7 +1258,7 @@ export default function InventoryApp() {
           <div className="tab-fade" key="inventory">
             <InventoryView produk={produkFilter} search={search} setSearch={setSearch}
               namaKategori={namaKategori} warnaKategoriMap={warnaKategoriMap}
-              filterKategori={filterKategori} setFilterKategori={setFilterKategori} isAdmin={isAdmin}
+              filterKategori={filterKategori} setFilterKategori={setFilterKategori} isAdmin={isAdmin} bisaLihatHarga={bisaLihatHarga}
               onTambah={() => { setErrorForm(""); setModalProduk("baru"); }}
               onEdit={(p) => { setErrorForm(""); setModalProduk(p); }}
               onHapus={hapusProduk}
@@ -1236,15 +1267,21 @@ export default function InventoryApp() {
           </div>
         )}
 
+        {tab === "masterdata" && (
+          <div className="tab-fade" key="masterdata">
+            <MasterDataView produk={products} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
+          </div>
+        )}
+
         {tab === "mutasi" && (
           <div className="tab-fade" key="mutasi">
-            <MutasiView mutasi={mutasiGudang} isAdmin={isAdmin} onCatat={() => setModalMutasi(true)} onCetak={cetakInvoiceMutasi} />
+            <MutasiView mutasi={mutasiGudang} isAdmin={isAdmin} onCatat={() => setModalMutasi(true)} onCetak={cetakInvoiceMutasi} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
 
         {tab === "sales" && (
           <div className="tab-fade" key="sales">
-            <SalesView sales={salesGudang} isAdmin={isAdmin}
+            <SalesView sales={salesGudang} isAdmin={isAdmin} bisaLihatHarga={bisaLihatHarga}
               onJualBaru={() => setModalJual(true)}
               onEdit={(s) => setModalEditJual(s)}
               onHapus={hapusPenjualan} />
@@ -1253,19 +1290,19 @@ export default function InventoryApp() {
 
         {tab === "reports" && (
           <div className="tab-fade" key="reports">
-            <ReportsView trenHarian={trenHarian} produkTerlaris={produkTerlaris} distribusiKategori={distribusiKategori} products={productsGudang} warnaKategoriMap={warnaKategoriMap} mutasi={mutasiGudang} sales={salesGudang} isAdmin={isAdmin} />
+            <ReportsView trenHarian={trenHarian} produkTerlaris={produkTerlaris} distribusiKategori={distribusiKategori} products={productsGudang} warnaKategoriMap={warnaKategoriMap} mutasi={mutasiGudang} sales={salesGudang} isAdmin={isAdmin} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
 
         {tab === "riwayat" && (
           <div className="tab-fade" key="riwayat">
-            <RiwayatHargaView riwayat={riwayatHarga} products={products} produkTerpilih={modalRiwayat} isAdmin={isAdmin} onEditEntry={setModalEditRiwayat} />
+            <RiwayatHargaView riwayat={riwayatHarga} products={products} produkTerpilih={modalRiwayat} isAdmin={isAdmin} onEditEntry={setModalEditRiwayat} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
       </div>
 
       {modalProduk && (
-        <ModalProduk data={modalProduk === "baru" ? null : modalProduk} error={errorForm} categories={categories} products={products}
+        <ModalProduk data={modalProduk === "baru" ? null : modalProduk} error={errorForm} categories={categories} products={products} bisaLihatHarga={bisaLihatHarga}
           onBatal={() => setModalProduk(null)} onSimpan={simpanProduk} defaultGudang={isAdmin ? GUDANG[0] : currentUser.gudang} />
       )}
 
@@ -1275,7 +1312,7 @@ export default function InventoryApp() {
       )}
 
       {modalJual && (
-        <ModalJual products={productsGudang.length ? productsGudang : products} onBatal={() => setModalJual(false)}
+        <ModalJual products={productsGudang.length ? productsGudang : products} onBatal={() => setModalJual(false)} bisaLihatHarga={bisaLihatHarga}
           onSimpan={(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang) => { const err = catatPenjualan(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang); if (!err) setModalJual(false); return err; }} />
       )}
 
@@ -1289,7 +1326,7 @@ export default function InventoryApp() {
       )}
 
       {modalMutasi && (
-        <ModalMutasi products={products} isAdmin={isAdmin} currentUser={currentUser} onBatal={() => setModalMutasi(false)}
+        <ModalMutasi products={products} isAdmin={isAdmin} currentUser={currentUser} onBatal={() => setModalMutasi(false)} bisaLihatHarga={bisaLihatHarga}
           onSimpan={(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang) => { const err = catatMutasi(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang); if (!err) setModalMutasi(false); return err; }} />
       )}
 
@@ -1301,7 +1338,7 @@ export default function InventoryApp() {
         <ModalNotifikasi stokMenipis={stokMenipis} settings={settings} onTutup={() => setModalNotifikasi(false)} />
       )}
       {modalSetting && (
-        <ModalSetting settings={settings} onUpdate={simpanSettings} onTutup={() => setModalSetting(false)} onResetData={resetSemuaData} />
+        <ModalSetting settings={settings} onUpdate={simpanSettings} onTutup={() => setModalSetting(false)} onResetData={resetSemuaData} isAdmin={isAdmin} />
       )}
 
         <ToastContainer toasts={toasts} onTutup={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
@@ -1310,7 +1347,7 @@ export default function InventoryApp() {
   );
 }
 
-function ModalSetting({ settings, onUpdate, onTutup, onResetData }) {
+function ModalSetting({ settings, onUpdate, onTutup, onResetData, isAdmin }) {
   const [local, setLocal] = useState(settings);
   const [konfirmasiReset, setKonfirmasiReset] = useState(false);
   return (
@@ -1340,6 +1377,35 @@ function ModalSetting({ settings, onUpdate, onTutup, onResetData }) {
           </div>
         </Field>
       </Grid>
+
+      {isAdmin && (
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #2A3138" }}>
+          <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Tampilkan Harga per Akun Gudang</h4>
+          <p style={{ fontSize: 12, color: "#8B95A1", marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
+            Pilih akun gudang mana saja yang boleh melihat & mengubah harga beli/jual. Akun yang tidak dicentang tidak akan melihat kolom harga sama sekali (di Inventori, Riwayat Harga, maupun Laporan) -- tapi data harga tetap tersimpan lengkap di server, tidak hilang. Akun admin selalu bisa melihat harga.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button type="button" onClick={() => setLocal(s => ({ ...s, hargaVisibility: Object.fromEntries(GUDANG.map(g => [g, true])) }))} style={{ ...btnSecondary, fontSize: 12, padding: "6px 12px" }}>
+              Tampilkan semua
+            </button>
+            <button type="button" onClick={() => setLocal(s => ({ ...s, hargaVisibility: Object.fromEntries(GUDANG.map(g => [g, false])) }))} style={{ ...btnSecondary, fontSize: 12, padding: "6px 12px" }}>
+              Sembunyikan semua
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {GUDANG.map(g => {
+              const tampil = (local.hargaVisibility || {})[g] !== false;
+              return (
+                <label key={g} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                  <input type="checkbox" checked={tampil} onChange={e => setLocal(s => ({ ...s, hargaVisibility: { ...(s.hargaVisibility || {}), [g]: e.target.checked } }))} />
+                  <span style={{ color: "#EDEFF2", fontSize: 13 }}>{g}</span>
+                  <span style={{ color: tampil ? "#3FA796" : "#8B95A1", fontSize: 11, marginLeft: "auto" }}>{tampil ? "Harga terlihat" : "Harga disembunyikan"}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: 12, color: "#8B95A1", marginTop: 16, lineHeight: 1.5 }}>
         Pengaturan ini akan menyimpan tema dan nomor WA untuk notifikasi tanpa konfirmasi manual. Jika browser memblokir pembukaan WhatsApp otomatis, gunakan tombol di halaman Notifikasi sebagai cadangan.
@@ -1456,70 +1522,83 @@ function LoginView({ onLogin, onKembali }) {
   return (
     <div style={{
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
-      overflow: "hidden", color: "#EDEFF2", fontFamily: "'Inter', sans-serif",
-      background: "radial-gradient(circle at 50% 35%, #0F2A28 0%, #0A1614 45%, #060B0A 100%)",
+      overflow: "hidden", color: "#ffffff", fontFamily: "'Inter', sans-serif", background: "#0d1e20",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap');
         * { box-sizing: border-box; }
-        button { transition: all 0.15s ease; }
-        input:focus { border-color: #3FA796 !important; box-shadow: 0 0 0 3px rgba(63,167,150,0.15); }
         .kartu-login { animation: fadeInKartu 0.55s ease; }
         @keyframes fadeInKartu { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        .input-group { position: relative; margin-bottom: 20px; border-radius: 8px; overflow: hidden; }
+        .input-group svg.ikon-input { position: absolute; top: 50%; left: 15px; transform: translateY(-50%); width: 18px; height: 18px; color: #8c9b9d; z-index: 2; }
+        .input-group input {
+          width: 100%; padding: 15px 15px 15px 45px; background: transparent; border: 1px solid #1DB9A0;
+          border-radius: 8px; color: #ffffff; font-size: 14px; outline: none; transition: box-shadow 0.3s ease;
+          position: relative; z-index: 2;
+        }
+        .input-group input::placeholder { color: #8c9b9d; }
+        .input-group input:focus { box-shadow: 0 0 10px rgba(29,185,160,0.3); }
+        .input-group::before {
+          content: ''; position: absolute; top: 0; left: -150%; width: 50%; height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(29,185,160,0.4), transparent);
+          transform: skewX(-20deg); z-index: 1; animation: lightSweep 3s infinite linear; pointer-events: none;
+        }
+        .input-group.kedua::before { animation-delay: 1.5s; }
+        @keyframes lightSweep { 0%, 90% { left: -150%; } 100% { left: 150%; } }
+
+        .btn-login { width: 100%; padding: 15px; background-color: #1DB9A0; color: #fff; border: none; border-radius: 8px;
+          font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: background-color 0.2s ease, transform 0.1s ease;
+          box-shadow: 0 4px 15px rgba(29,185,160,0.3); }
+        .btn-login:hover { background-color: #179b85; }
+        .btn-login:active { transform: scale(0.98); }
       `}</style>
 
       <LoginAnimation enabled={animasiAktif} />
 
       <form onSubmit={submit} className="kartu-login" style={{
-        position: "relative", zIndex: 3, width: 360, background: "rgba(23,29,33,0.55)", backdropFilter: "blur(14px)",
-        WebkitBackdropFilter: "blur(14px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20,
-        padding: "34px 30px", boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+        position: "relative", zIndex: 3, width: 360, background: "rgba(255,255,255,0.03)", backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20,
+        padding: "40px 30px", boxShadow: "0 25px 45px rgba(0,0,0,0.2)", textAlign: "center",
       }}>
         {onKembali && (
-          <button type="button" onClick={onKembali} style={{ background: "none", border: "none", color: "rgba(237,239,242,0.6)", fontSize: 12, padding: 0, marginBottom: 18, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="button" onClick={onKembali} style={{ background: "none", border: "none", color: "#8c9b9d", fontSize: 12, padding: 0, marginBottom: 18, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             ← Kembali ke beranda
           </button>
         )}
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-          <Logo ukuranIkon={40} ukuranTeks={26} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 20 }}>
+          <img src={LOGO_ICON} alt="" style={{ width: 32, height: 32 }} />
+          <span style={{ fontSize: 24, fontWeight: 600 }}>Gudang<span style={{ color: "#1DB9A0" }}>Ku</span></span>
         </div>
-        <p style={{ textAlign: "center", fontSize: 16, fontWeight: 500, color: "#EDEFF2", margin: "0 0 22px" }}>Masuk</p>
+        <h2 style={{ fontSize: 18, fontWeight: 400, margin: "0 0 30px", letterSpacing: 1 }}>Masuk</h2>
 
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.04)" }}>
-            <User size={15} color="rgba(237,239,242,0.55)" />
-            <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username"
-              style={{ background: "none", border: "none", outline: "none", color: "#EDEFF2", width: "100%", fontSize: 14 }} />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.04)" }}>
-            <Lock size={15} color="rgba(237,239,242,0.55)" />
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
-              style={{ background: "none", border: "none", outline: "none", color: "#EDEFF2", width: "100%", fontSize: 14 }} />
-          </div>
+        <div className="input-group">
+          <svg className="ikon-input" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" autoComplete="off" />
         </div>
 
-        {error && <div style={{ color: "#FF8A80", fontSize: 12, marginTop: 8 }}>{error}</div>}
+        <div className="input-group kedua">
+          <svg className="ikon-input" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
+        </div>
 
-        <button type="submit" style={{
-          width: "100%", marginTop: 20, padding: "13px 0", borderRadius: 999, border: "none", cursor: "pointer",
-          background: "linear-gradient(135deg, #3FA796, #2C8577)", color: "#fff", fontWeight: 700, fontSize: 15,
-          boxShadow: "0 8px 22px rgba(63,167,150,0.35)",
-        }}>
-          Masuk
-        </button>
+        {error && <div style={{ color: "#FF8A80", fontSize: 12, marginTop: -8, marginBottom: 12, textAlign: "left" }}>{error}</div>}
 
-        <p style={{ textAlign: "center", color: "rgba(237,239,242,0.55)", fontSize: 12.5, marginTop: 20, marginBottom: 0 }}>
-          Sistem Gudang Terintegrasi
-        </p>
+        <button type="submit" className="btn-login">Masuk</button>
 
-        <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+        <p style={{ marginTop: 25, color: "#8c9b9d", fontSize: 12, letterSpacing: 0.5 }}>Sistem Gudang Terintegrasi</p>
+
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 10 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={animasiAktif} onChange={() => setAnimasiAktif(v => !v)} style={{ width: 13, height: 13 }} />
-            <span style={{ fontSize: 11, color: "rgba(237,239,242,0.5)" }}>Animasi latar</span>
+            <span style={{ fontSize: 11, color: "#8c9b9d" }}>Animasi latar</span>
           </label>
         </div>
       </form>
@@ -1528,7 +1607,7 @@ function LoginView({ onLogin, onKembali }) {
 }
 
 // ============================================================
-function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapatan, totalProfit, totalTransaksi, mutasiHariIni, trenHarian, produkTerlaris, distribusiKategori, warnaKategoriMap }) {
+function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapatan, totalProfit, totalTransaksi, mutasiHariIni, trenHarian, produkTerlaris, distribusiKategori, warnaKategoriMap, bisaLihatHarga = true }) {
   return (
     <div>
       <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1538,47 +1617,49 @@ function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapata
       <BarcodeDivider />
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-        <KartuKPI ikon={Wallet} label="Nilai Stok" nilai={nilaiTotalStok} formatFn={rupiah} sub={`${totalItems} jenis produk`} warna="#3FA796" />
+        {bisaLihatHarga && <KartuKPI ikon={Wallet} label="Nilai Stok" nilai={nilaiTotalStok} formatFn={rupiah} sub={`${totalItems} jenis produk`} warna="#3FA796" />}
         <KartuKPI ikon={AlertTriangle} label="Stok Menipis" nilai={stokMenipis.length} sub="perlu restock segera" warna="#E8A33D" />
-        <KartuKPI ikon={TrendingUp} label="Pendapatan" nilai={totalPendapatan} formatFn={rupiah} sub="30 hari terakhir" warna="#3FA796" />
-        <KartuKPI ikon={ShoppingCart} label="Profit Kotor" nilai={totalProfit} formatFn={rupiah} sub={`${totalTransaksi} transaksi`} warna="#F2C14E" />
+        {bisaLihatHarga && <KartuKPI ikon={TrendingUp} label="Pendapatan" nilai={totalPendapatan} formatFn={rupiah} sub="30 hari terakhir" warna="#3FA796" />}
+        {bisaLihatHarga && <KartuKPI ikon={ShoppingCart} label="Profit Kotor" nilai={totalProfit} formatFn={rupiah} sub={`${totalTransaksi} transaksi`} warna="#F2C14E" />}
         <KartuKPI ikon={ArrowRightLeft} label="Mutasi Hari Ini" nilai={mutasiHariIni} sub="barang masuk & keluar" warna="#6C8EBF" />
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ flex: 2, minWidth: 420, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
-          <h3 style={judulKartu}>Tren Pendapatan & Profit Harian</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={trenHarian}>
-              <defs>
-                <linearGradient id="gPendapatan" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3FA796" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#3FA796" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" />
-              <XAxis dataKey="label" stroke="#5C6570" fontSize={11} />
-              <YAxis stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}rb`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} labelStyle={{ color: "#EDEFF2" }} />
-              <Area type="monotone" dataKey="pendapatan" stroke="#3FA796" fill="url(#gPendapatan)" strokeWidth={2} name="Pendapatan" />
-              <Line type="monotone" dataKey="profit" stroke="#F2C14E" strokeWidth={2} dot={false} name="Profit" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+      {bisaLihatHarga && (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 2, minWidth: 420, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
+            <h3 style={judulKartu}>Tren Pendapatan & Profit Harian</h3>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={trenHarian}>
+                <defs>
+                  <linearGradient id="gPendapatan" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3FA796" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#3FA796" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" />
+                <XAxis dataKey="label" stroke="#5C6570" fontSize={11} />
+                <YAxis stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}rb`} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} labelStyle={{ color: "#EDEFF2" }} />
+                <Area type="monotone" dataKey="pendapatan" stroke="#3FA796" fill="url(#gPendapatan)" strokeWidth={2} name="Pendapatan" />
+                <Line type="monotone" dataKey="profit" stroke="#F2C14E" strokeWidth={2} dot={false} name="Profit" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
 
-        <div style={{ flex: 1, minWidth: 260, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
-          <h3 style={judulKartu}>Nilai Stok per Kategori</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie data={distribusiKategori} dataKey="nilai" nameKey="kategori" innerRadius={55} outerRadius={85} paddingAngle={2}>
-                {distribusiKategori.map((d, i) => <Cell key={i} fill={warnaKategoriMap[d.kategori] || "#3FA796"} />)}
-              </Pie>
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#8B95A1" }} />
-            </PieChart>
-          </ResponsiveContainer>
+          <div style={{ flex: 1, minWidth: 260, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
+            <h3 style={judulKartu}>Nilai Stok per Kategori</h3>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={distribusiKategori} dataKey="nilai" nameKey="kategori" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                  {distribusiKategori.map((d, i) => <Cell key={i} fill={warnaKategoriMap[d.kategori] || "#3FA796"} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} />
+                <Legend wrapperStyle={{ fontSize: 11, color: "#8B95A1" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 320, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
@@ -1621,7 +1702,7 @@ const judulKartu = { margin: "0 0 12px", fontSize: 13, color: "#8B95A1", fontWei
 const tooltipStyle = { background: "#1D2329", border: "1px solid #2A3138", borderRadius: 8 };
 
 // ============================================================
-function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriMap, filterKategori, setFilterKategori, isAdmin, onTambah, onEdit, onHapus, onRiwayat, onKelolaKategori }) {
+function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriMap, filterKategori, setFilterKategori, isAdmin, bisaLihatHarga, onTambah, onEdit, onHapus, onRiwayat, onKelolaKategori }) {
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
   const [exportKategori, setExportKategori] = useState("Semua");
@@ -1644,8 +1725,8 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
         </div>
         <div className="no-print" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <TombolEkspor
-            onExcel={() => eksporExcel([{ nama: "Inventori", data: dataUntukEkspor.map(p => ({ "Tanggal": tanggalID(p.createdAt), "Kode Barang": p.kodeBarang, Nama: p.nama, Kategori: p.kategori, Gudang: p.gudang, Satuan: p.satuan, Stok: p.stok, "Stok Minimum": p.stokMin, "Harga Beli": p.hargaBeli, "Harga Jual": p.hargaJual, "Nilai Stok": p.stok * p.hargaBeli })) }], "inventori")}
-            onCSV={() => eksporCSV(dataUntukEkspor.map(p => ({ Tanggal: tanggalID(p.createdAt), KodeBarang: p.kodeBarang, Nama: p.nama, Kategori: p.kategori, Gudang: p.gudang, Satuan: p.satuan, Stok: p.stok, StokMinimum: p.stokMin, HargaBeli: p.hargaBeli, HargaJual: p.hargaJual, NilaiStok: p.stok * p.hargaBeli })), "inventori")}
+            onExcel={() => eksporExcel([{ nama: "Inventori", data: dataUntukEkspor.map(p => ({ "Tanggal": tanggalID(p.createdAt), "Kode Barang": p.kodeBarang, Nama: p.nama, Kategori: p.kategori, Gudang: p.gudang, Satuan: p.satuan, Stok: p.stok, "Stok Minimum": p.stokMin, ...(bisaLihatHarga ? { "Harga Beli": p.hargaBeli, "Harga Jual": p.hargaJual, "Nilai Stok": p.stok * p.hargaBeli } : {}) })) }], "inventori")}
+            onCSV={() => eksporCSV(dataUntukEkspor.map(p => ({ Tanggal: tanggalID(p.createdAt), KodeBarang: p.kodeBarang, Nama: p.nama, Kategori: p.kategori, Gudang: p.gudang, Satuan: p.satuan, Stok: p.stok, StokMinimum: p.stokMin, ...(bisaLihatHarga ? { HargaBeli: p.hargaBeli, HargaJual: p.hargaJual, NilaiStok: p.stok * p.hargaBeli } : {}) })), "inventori")}
             onPDF={() => window.print()}
           />
           {isAdmin && (
@@ -1706,7 +1787,8 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
           <thead>
             <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase" }}>
               <th>Tanggal</th><th>Kode Barang</th><th>Produk</th><th>Kategori</th><th>Satuan</th><th>Gudang</th><th>Status Stok</th>
-              <th>Harga Beli</th><th>Harga Jual</th><th>Nilai Stok</th><th className="no-print"></th>
+              {bisaLihatHarga && <><th>Harga Beli</th><th>Harga Jual</th><th>Nilai Stok</th></>}
+              <th className="no-print"></th>
             </tr>
           </thead>
           <tbody>
@@ -1719,19 +1801,21 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
                 <td style={{ fontSize: 12, color: "#8B95A1" }}>{p.satuan}</td>
                 <td><Badge warna={GUDANG_WARNA[p.gudang]}>{p.gudang}</Badge></td>
                 <td><IndikatorStok stok={p.stok} stokMin={p.stokMin} satuan={p.satuan} /></td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.hargaBeli)}</td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.hargaJual)}</td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.stok * p.hargaBeli)}</td>
+                {bisaLihatHarga && <>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.hargaBeli)}</td>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.hargaJual)}</td>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.stok * p.hargaBeli)}</td>
+                </>}
                 <td className="no-print">
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => onRiwayat(p.id)} title="Riwayat harga" className="icon-btn-hover" style={iconBtn}><History size={13} /></button>
+                    {bisaLihatHarga && <button onClick={() => onRiwayat(p.id)} title="Riwayat harga" className="icon-btn-hover" style={iconBtn}><History size={13} /></button>}
                     {isAdmin && <button onClick={() => onEdit(p)} title="Edit" className="icon-btn-hover" style={iconBtn}><Pencil size={13} /></button>}
                     {isAdmin && <button onClick={() => onHapus(p.id)} title="Hapus" className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>}
                   </div>
                 </td>
               </tr>
             ))}
-            {produk.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada produk yang cocok dengan pencarian.</td></tr>}
+            {produk.length === 0 && <tr><td colSpan={bisaLihatHarga ? 11 : 8} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada produk yang cocok dengan pencarian.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1740,6 +1824,89 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
 }
 
 const iconBtn = { background: "none", border: "1px solid #2A3138", borderRadius: 6, padding: 6, color: "#8B95A1" };
+
+// ============================================================
+// Master Data: daftar seluruh barang yang sudah masuk dan belum keluar (stok saat ini)
+// dari SEMUA gudang, terlihat sama oleh semua akun -- bukan cuma gudang milik akun yang login.
+function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga }) {
+  const [search, setSearch] = useState("");
+  const [filterKategori, setFilterKategori] = useState("Semua");
+  const [filterGudang, setFilterGudang] = useState("Semua");
+
+  const namaKategori = useMemo(() => [...new Set(produk.map(p => p.kategori))], [produk]);
+
+  const daftar = useMemo(() => {
+    return produk.filter(p => {
+      if (filterKategori !== "Semua" && p.kategori !== filterKategori) return false;
+      if (filterGudang !== "Semua" && p.gudang !== filterGudang) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (![p.nama, p.kodeBarang, p.supplier].some(v => String(v || "").toLowerCase().includes(q))) return false;
+      }
+      return true;
+    }).sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [produk, filterKategori, filterGudang, search]);
+
+  const totalStokUnit = daftar.reduce((s, p) => s + p.stok, 0);
+  const jumlahGudangTerpakai = new Set(daftar.map(p => p.gudang)).size;
+  const stokMenipisCount = daftar.filter(p => p.stok <= p.stokMin).length;
+
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Master Data Barang</h1>
+      <p style={{ color: "#8B95A1", marginTop: 4 }}>Daftar seluruh barang yang sudah masuk dan belum keluar (stok saat ini) di semua gudang -- terlihat sama untuk semua akun.</p>
+      <BarcodeDivider />
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
+        <KartuKPI ikon={Database} label="Jenis Barang" nilai={daftar.length} sub="tercatat di master data" warna="#3FA796" />
+        <KartuKPI ikon={Boxes} label="Total Unit Stok" nilai={totalStokUnit} sub="seluruh satuan digabung" warna="#6C8EBF" />
+        <KartuKPI ikon={Building2} label="Gudang Terpakai" nilai={jumlahGudangTerpakai} sub={`dari ${GUDANG.length} gudang`} warna="#F2C14E" />
+        <KartuKPI ikon={AlertTriangle} label="Stok Menipis" nilai={stokMenipisCount} sub="perlu restock segera" warna="#E8A33D" />
+      </div>
+
+      <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 8, padding: "8px 12px", flex: 1, maxWidth: 320 }}>
+          <Search size={15} color="#5C6570" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari nama, kode, atau supplier..." style={{ background: "transparent", border: "none", outline: "none", color: "#EDEFF2", width: "100%" }} />
+        </div>
+        <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={inputStyle}>
+          <option>Semua</option>
+          {namaKategori.map(k => <option key={k}>{k}</option>)}
+        </select>
+        <select value={filterGudang} onChange={e => setFilterGudang(e.target.value)} style={inputStyle}>
+          <option>Semua</option>
+          {GUDANG.map(g => <option key={g}>{g}</option>)}
+        </select>
+      </div>
+
+      <div style={{ background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, overflow: "hidden", overflowX: "auto" }}>
+        <table>
+          <thead>
+            <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase" }}>
+              <th>Kode Barang</th><th>Produk</th><th>Kategori</th><th>Gudang</th><th>Stok Saat Ini</th><th>Status</th><th>Supplier</th>
+              {bisaLihatHarga && <th>Nilai Stok</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {daftar.map(p => (
+              <tr key={p.id} style={{ borderTop: "1px solid #2A3138", fontSize: 13 }}>
+                <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#8B95A1" }}>{p.kodeBarang}</td>
+                <td><div style={{ fontWeight: 500 }}>{p.nama}</div></td>
+                <td><Badge warna={warnaKategoriMap[p.kategori]}>{p.kategori}</Badge></td>
+                <td><Badge warna={GUDANG_WARNA[p.gudang]}>{p.gudang}</Badge></td>
+                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{p.stok} {satuanSingkat(p.satuan)}</td>
+                <td><IndikatorStok stok={p.stok} stokMin={p.stokMin} satuan={p.satuan} /></td>
+                <td style={{ color: "#8B95A1", fontSize: 12 }}>{p.supplier || "-"}</td>
+                {bisaLihatHarga && <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.stok * p.hargaBeli)}</td>}
+              </tr>
+            ))}
+            {daftar.length === 0 && <tr><td colSpan={bisaLihatHarga ? 8 : 7} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada barang yang cocok dengan pencarian.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
@@ -1854,7 +2021,7 @@ function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
 }
 
 // ============================================================
-function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus }) {
+function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga = true }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1864,8 +2031,8 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus }) {
         </div>
         <div className="no-print" style={{ display: "flex", gap: 10 }}>
           <TombolEkspor
-            onExcel={() => eksporExcel([{ nama: "Penjualan", data: sales.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit })) }], "penjualan")}
-            onCSV={() => eksporCSV(sales.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit })), "penjualan")}
+            onExcel={() => eksporExcel([{ nama: "Penjualan", data: sales.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })) }], "penjualan")}
+            onCSV={() => eksporCSV(sales.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })), "penjualan")}
             onPDF={() => window.print()}
           />
           <button onClick={onJualBaru} className="btn-primary-glow" style={{ ...btnPrimary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Catat Penjualan</button>
@@ -1877,7 +2044,9 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus }) {
         <table>
           <thead>
             <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase", position: "sticky", top: 0 }}>
-              <th>Tanggal</th><th>Produk</th><th>Kode Barang</th><th>Gudang</th><th>Qty</th><th>Harga Jual</th><th>Total</th><th>Profit</th><th className="no-print"></th>
+              <th>Tanggal</th><th>Produk</th><th>Kode Barang</th><th>Gudang</th><th>Qty</th>
+              {bisaLihatHarga && <><th>Harga Jual</th><th>Total</th><th>Profit</th></>}
+              <th className="no-print"></th>
             </tr>
           </thead>
           <tbody>
@@ -1888,9 +2057,11 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus }) {
                 <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#8B95A1" }}>{s.kodeBarang}</td>
                 <td><Badge warna={GUDANG_WARNA[s.gudang]}>{s.gudang}</Badge></td>
                 <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{s.jumlah}</td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(s.hargaJualSaat)}</td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>{rupiah(s.total)}</td>
-                <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#3FA796" }}>{rupiah(s.profit)}</td>
+                {bisaLihatHarga && <>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(s.hargaJualSaat)}</td>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 }}>{rupiah(s.total)}</td>
+                  <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#3FA796" }}>{rupiah(s.profit)}</td>
+                </>}
                 <td className="no-print">
                   {isAdmin && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -1909,11 +2080,11 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus }) {
 }
 
 // ============================================================
-function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMap, mutasi, sales, isAdmin }) {
+function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMap, mutasi, sales, isAdmin, bisaLihatHarga = true }) {
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
-  const [grafikMode, setGrafikMode] = useState("Pendapatan & Profit");
+  const [grafikMode, setGrafikMode] = useState(bisaLihatHarga ? "Pendapatan & Profit" : "Barang Masuk");
 
   const produkUntukMargin = useMemo(() => {
     return products.filter(p => filterKategori === "Semua" || p.kategori === filterKategori);
@@ -1973,10 +2144,10 @@ function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMa
 
       <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
         <select value={grafikMode} onChange={e => setGrafikMode(e.target.value)} style={{ ...inputStyle, minWidth: 200 }}>
-          <option>Pendapatan & Profit</option>
+          {bisaLihatHarga && <option>Pendapatan & Profit</option>}
           <option>Barang Masuk</option>
           <option>Barang Keluar</option>
-          <option>Aset Mengendap</option>
+          {bisaLihatHarga && <option>Aset Mengendap</option>}
         </select>
         <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={{ ...inputStyle, minWidth: 180 }}>
           <option>Semua</option>
@@ -1987,18 +2158,20 @@ function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMa
       </div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 420, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
-          <h3 style={judulKartu}>Margin Keuntungan Tertinggi (%)</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={margin}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" />
-              <XAxis dataKey="nama" stroke="#5C6570" fontSize={10} angle={-20} textAnchor="end" height={70} />
-              <YAxis stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${v}%`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${v}%`} />
-              <Bar dataKey="margin" fill="#F2C14E" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {bisaLihatHarga && (
+          <div style={{ flex: 1, minWidth: 420, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
+            <h3 style={judulKartu}>Margin Keuntungan Tertinggi (%)</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={margin}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" />
+                <XAxis dataKey="nama" stroke="#5C6570" fontSize={10} angle={-20} textAnchor="end" height={70} />
+                <YAxis stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${v}%`} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${v}%`} />
+                <Bar dataKey="margin" fill="#F2C14E" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         <div style={{ flex: 1, minWidth: 420, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
           <h3 style={judulKartu}>{grafikMode}</h3>
@@ -2039,31 +2212,45 @@ function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMa
         </div>
       </div>
 
-      <div style={{ marginTop: 16, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
-        <h3 style={judulKartu}>Kontribusi Nilai Stok per Kategori</h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={distribusiKategori} layout="vertical" margin={{ left: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" horizontal={false} />
-            <XAxis type="number" stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}jt`} />
-            <YAxis type="category" dataKey="kategori" stroke="#5C6570" fontSize={12} width={110} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} />
-            <Bar dataKey="nilai" radius={[0, 4, 4, 0]}>
-              {distribusiKategori.map((d, i) => <Cell key={i} fill={warnaKategoriMap[d.kategori] || "#3FA796"} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {bisaLihatHarga && (
+        <div style={{ marginTop: 16, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
+          <h3 style={judulKartu}>Kontribusi Nilai Stok per Kategori</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={distribusiKategori} layout="vertical" margin={{ left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" horizontal={false} />
+              <XAxis type="number" stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}jt`} />
+              <YAxis type="category" dataKey="kategori" stroke="#5C6570" fontSize={12} width={110} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} />
+              <Bar dataKey="nilai" radius={[0, 4, 4, 0]}>
+                {distribusiKategori.map((d, i) => <Cell key={i} fill={warnaKategoriMap[d.kategori] || "#3FA796"} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================
-function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEntry }) {
+function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEntry, bisaLihatHarga = true }) {
   const [filterProduk, setFilterProduk] = useState(produkTerpilih && produkTerpilih !== "semua" ? produkTerpilih : "semua");
   const [filterField, setFilterField] = useState("Semua");
   const [searchQuery, setSearchQuery] = useState("");
   const [tanggalMulai, setTanggalMulai] = useState("");
   const [tanggalSelesai, setTanggalSelesai] = useState("");
+
+  if (!bisaLihatHarga) {
+    return (
+      <div>
+        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Riwayat Perubahan Harga</h1>
+        <div style={{ marginTop: 20, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 30, textAlign: "center", color: "#8B95A1" }}>
+          <Lock size={22} style={{ marginBottom: 10, opacity: 0.6 }} />
+          <p style={{ margin: 0 }}>Akun ini tidak diberi akses untuk melihat harga. Hubungi admin kalau ini keliru.</p>
+        </div>
+      </div>
+    );
+  }
 
   const daftar = useMemo(() => {
     return riwayat.filter(r => {
@@ -2163,7 +2350,7 @@ function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEn
 }
 
 // ============================================================
-function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories, products = [] }) {
+function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories, products = [], bisaLihatHarga = true }) {
   const [form, setForm] = useState(data || {
     id: null, kodeBarang: "", nama: "", kategori: categories[0]?.nama || "", gudang: defaultGudang,
     satuan: SATUAN_GROUPS[0].opsi[0], stok: 0, stokMin: 10, hargaBeli: 0, hargaJual: 0, supplier: ""
@@ -2178,9 +2365,11 @@ function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories
 
   const kodePreview = useMemo(() => {
     if (data) return data.kodeBarang;
+    const serupa = products.find(p => p.nama.trim().toLowerCase() === form.nama.trim().toLowerCase());
+    if (serupa) return serupa.kodeBarang;
     const kat = categories.find(c => c.nama === form.kategori);
     return kat ? `${kat.prefix}-${pad((kat.counter || 0) + 1, 3)}` : "-";
-  }, [data, form.kategori, categories]);
+  }, [data, form.kategori, form.nama, categories, products]);
 
   // Saat menambah produk baru: cari nama produk yang pernah diinput sebelumnya (di gudang manapun)
   // supaya kategori/satuan/harga bisa otomatis terisi dari riwayat, tanpa perlu ketik ulang dari nol.
@@ -2284,8 +2473,16 @@ function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories
           )}
         </Field>
         <Field label={`Stok Minimum (${satuanSingkat(form.satuan)})`}><input type="number" value={form.stokMin} onChange={set("stokMin")} style={inputStyle} /></Field>
-        <Field label="Harga Beli (Rp)"><input type="number" value={form.hargaBeli} onChange={set("hargaBeli")} style={inputStyle} /></Field>
-        <Field label="Harga Jual (Rp)"><input type="number" value={form.hargaJual} onChange={set("hargaJual")} style={inputStyle} /></Field>
+        {bisaLihatHarga ? (
+          <>
+            <Field label="Harga Beli (Rp)"><input type="number" value={form.hargaBeli} onChange={set("hargaBeli")} style={inputStyle} /></Field>
+            <Field label="Harga Jual (Rp)"><input type="number" value={form.hargaJual} onChange={set("hargaJual")} style={inputStyle} /></Field>
+          </>
+        ) : (
+          <Field label="Harga">
+            <div style={{ ...inputStyle, display: "flex", alignItems: "center", color: "#5C6570", background: "#171B20", cursor: "not-allowed" }}>Tidak ditampilkan untuk akun ini</div>
+          </Field>
+        )}
       </Grid>
 
       {error && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error}</div>}
@@ -2380,7 +2577,7 @@ function ModalKategori({ categories, products, onBatal, onTambah, onEdit, onHapu
 }
 
 // ============================================================
-function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan }) {
+function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLihatHarga = true }) {
   const [gudangPilihan, setGudangPilihan] = useState(isAdmin ? GUDANG[0] : currentUser.gudang);
   const produkGudang = useMemo(() => products.filter(p => p.gudang === gudangPilihan), [products, gudangPilihan]);
   const [jenis, setJenis] = useState("Masuk");
@@ -2442,12 +2639,14 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan }) {
         <Field label={`Jumlah ${produkDipilih ? `(${satuanSingkat(produkDipilih.satuan)})` : ""}`}>
           <input type="number" min={1} value={jumlah} onChange={e => setJumlah(Number(e.target.value))} style={inputStyle} />
         </Field>
-        <Field label="Harga Satuan (Rp)">
-          <input type="text" inputMode="numeric" value={hargaSatuan} onChange={e => {
-            const raw = e.target.value.replace(/[^0-9]/g, '');
-            setHargaSatuan(raw.replace(/^0+/, ''));
-          }} placeholder={jenis === "Masuk" ? "Masukkan harga beli per unit" : "Opsional untuk keluar/transfer"} style={inputStyle} />
-        </Field>
+        {bisaLihatHarga && (
+          <Field label="Harga Satuan (Rp)">
+            <input type="text" inputMode="numeric" value={hargaSatuan} onChange={e => {
+              const raw = e.target.value.replace(/[^0-9]/g, '');
+              setHargaSatuan(raw.replace(/^0+/, ''));
+            }} placeholder={jenis === "Masuk" ? "Masukkan harga beli per unit" : "Opsional untuk keluar/transfer"} style={inputStyle} />
+          </Field>
+        )}
         {jenis === "Transfer" && (
           <Field label="Gudang Tujuan">
             <select value={tujuanGudang} onChange={e => setTujuanGudang(e.target.value)} style={inputStyle}>
@@ -2517,7 +2716,7 @@ function ModalInvoiceMutasi({ record, onTutup, onCetak }) {
   );
 }
 
-function ModalJual({ products, onBatal, onSimpan }) {
+function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
   const [produkId, setProdukId] = useState(products[0]?.id || "");
   const [productSearch, setProductSearch] = useState(`${products[0]?.nama} (${products[0]?.kodeBarang})`);
   const [transactionType, setTransactionType] = useState("Penjualan");
@@ -2575,10 +2774,12 @@ function ModalJual({ products, onBatal, onSimpan }) {
               const raw = e.target.value.replace(/[^0-9]/g, '');
               setJumlah(raw.replace(/^0+/, ''));
             }} style={inputStyle} placeholder="Kosongkan jika belum tahu" /></Field>
-        <Field label="Harga Jual per Unit (Rp)"><input type="text" inputMode="numeric" value={hargaJualOverride} onChange={e => {
+        {bisaLihatHarga && (
+          <Field label="Harga Jual per Unit (Rp)"><input type="text" inputMode="numeric" value={hargaJualOverride} onChange={e => {
               const raw = e.target.value.replace(/[^0-9]/g, '');
               setHargaJualOverride(raw.replace(/^0+/, ''));
             }} style={inputStyle} placeholder="Kosongkan untuk gunakan harga default" /></Field>
+        )}
       </Grid>
       {transactionType === "Transfer" && (
         <Field label="Gudang Tujuan">
@@ -2588,11 +2789,13 @@ function ModalJual({ products, onBatal, onSimpan }) {
         </Field>
       )}
       <Field label="Keterangan (opsional)"><input value={keterangan} onChange={e => setKeterangan(e.target.value)} style={inputStyle} placeholder="Contoh: Penjualan online, Pesanan toko" /></Field>
-      <Field label="Estimasi Total">
-        <div style={{ ...inputStyle, display: "flex", alignItems: "center", fontFamily: "'IBM Plex Mono', monospace" }}>
-          {rupiah((Number(hargaJualOverride) > 0 ? Number(hargaJualOverride) : (produkDipilih?.hargaJual || 0)) * Number(jumlah || 0))}
-        </div>
-      </Field>
+      {bisaLihatHarga && (
+        <Field label="Estimasi Total">
+          <div style={{ ...inputStyle, display: "flex", alignItems: "center", fontFamily: "'IBM Plex Mono', monospace" }}>
+            {rupiah((Number(hargaJualOverride) > 0 ? Number(hargaJualOverride) : (produkDipilih?.hargaJual || 0)) * Number(jumlah || 0))}
+          </div>
+        </Field>
+      )}
       {error && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onBatal} style={btnSecondary}>Batal</button>

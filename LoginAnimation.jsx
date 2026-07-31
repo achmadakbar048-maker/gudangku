@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from "react";
 
 // Latar animasi untuk halaman login: partikel yang bergerak pelan dengan garis
-// penghubung (efek "jaringan"), ditambah beberapa kubus 3D tembus pandang yang
-// berputar dan melayang. Murni CSS + Canvas 2D, tidak menambah dependency.
+// penghubung (efek "jaringan"), formula & warna disamakan dengan kode referensi,
+// ditambah beberapa kubus 3D tembus pandang yang berputar dan melayang.
 export default function LoginAnimation({ enabled = true }) {
   const canvasRef = useRef(null);
 
@@ -11,64 +11,65 @@ export default function LoginAnimation({ enabled = true }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let lebar = 0, tinggi = 0, titik = [], rafId;
+    let partikel = [], rafId;
 
     function ukurUlang() {
-      lebar = canvas.width = canvas.offsetWidth * dpr;
-      tinggi = canvas.height = canvas.offsetHeight * dpr;
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
     }
 
-    function buatTitik() {
-      const jumlah = Math.round((canvas.offsetWidth * canvas.offsetHeight) / 24000) + 14;
-      titik = Array.from({ length: jumlah }, () => ({
-        x: Math.random() * lebar,
-        y: Math.random() * tinggi,
-        vx: (Math.random() - 0.5) * 0.3 * dpr,
-        vy: (Math.random() - 0.5) * 0.3 * dpr,
-      }));
-    }
-
-    function gambar() {
-      ctx.clearRect(0, 0, lebar, tinggi);
-      const jarakMax = 150 * dpr;
-
-      for (const t of titik) {
-        t.x += t.vx;
-        t.y += t.vy;
-        if (t.x <= 0 || t.x >= lebar) t.vx *= -1;
-        if (t.y <= 0 || t.y >= tinggi) t.vy *= -1;
+    function buatPartikel() {
+      partikel = [];
+      const jumlah = (canvas.width * canvas.height) / 15000;
+      for (let i = 0; i < jumlah; i++) {
+        const ukuran = Math.random() * 3 + 1;
+        partikel.push({
+          x: Math.random() * (canvas.width - ukuran * 2 - ukuran * 2) + ukuran * 2,
+          y: Math.random() * (canvas.height - ukuran * 2 - ukuran * 2) + ukuran * 2,
+          vx: Math.random() * 2 - 1,
+          vy: Math.random() * 2 - 1,
+          ukuran,
+        });
       }
+    }
 
-      for (let i = 0; i < titik.length; i++) {
-        for (let j = i + 1; j < titik.length; j++) {
-          const a = titik[i], b = titik[j];
-          const dx = a.x - b.x, dy = a.y - b.y;
-          const jarak = Math.sqrt(dx * dx + dy * dy);
-          if (jarak < jarakMax) {
-            ctx.strokeStyle = `rgba(63,167,150,${0.32 * (1 - jarak / jarakMax)})`;
-            ctx.lineWidth = 1 * dpr;
+    function hubungkan() {
+      for (let a = 0; a < partikel.length; a++) {
+        for (let b = a; b < partikel.length; b++) {
+          const jarak = (partikel[a].x - partikel[b].x) ** 2 + (partikel[a].y - partikel[b].y) ** 2;
+          if (jarak < (canvas.width / 7) * (canvas.height / 7)) {
+            const opasitas = 1 - jarak / 20000;
+            ctx.strokeStyle = `rgba(29,185,160,${opasitas})`;
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
+            ctx.moveTo(partikel[a].x, partikel[a].y);
+            ctx.lineTo(partikel[b].x, partikel[b].y);
             ctx.stroke();
           }
         }
       }
-      for (const t of titik) {
-        ctx.fillStyle = "rgba(110,220,200,0.85)";
-        ctx.beginPath();
-        ctx.arc(t.x, t.y, 1.7 * dpr, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      rafId = requestAnimationFrame(gambar);
     }
 
-    ukurUlang();
-    buatTitik();
-    gambar();
+    function animasikan() {
+      rafId = requestAnimationFrame(animasikan);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const p of partikel) {
+        if (p.x > canvas.width || p.x < 0) p.vx = -p.vx;
+        if (p.y > canvas.height || p.y < 0) p.vy = -p.vy;
+        p.x += p.vx;
+        p.y += p.vy;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.ukuran, 0, Math.PI * 2, false);
+        ctx.fillStyle = "#1DB9A0";
+        ctx.fill();
+      }
+      hubungkan();
+    }
 
-    function saatResize() { ukurUlang(); buatTitik(); }
+    function saatResize() { ukurUlang(); buatPartikel(); }
+    ukurUlang();
+    buatPartikel();
+    animasikan();
     window.addEventListener("resize", saatResize);
     return () => {
       cancelAnimationFrame(rafId);
