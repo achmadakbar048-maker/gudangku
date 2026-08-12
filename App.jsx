@@ -11,7 +11,7 @@ import {
   LogOut, Bell, ArrowUp, ArrowDown, Download, FileSpreadsheet, Printer,
   Building2, Mail, MessageCircle, Lock, User, Settings, ArrowRightLeft,
   PackagePlus, PackageMinus, CheckCircle2, XCircle, Info, FileText, Tags,
-  Sparkles, ChevronLeft, ChevronRight, Database
+  Sparkles, ChevronLeft, ChevronRight, Database, Menu, ClipboardCheck
 } from "lucide-react";
 import LoginAnimation from "./LoginAnimation";
 
@@ -160,6 +160,7 @@ const SATUAN_GROUPS = [
   { grup: "Satuan Berat", opsi: ["Kilogram (kg)", "Gram (gr)", "Ons", "Ton", "Pound (lbs)"] },
   { grup: "Satuan Volume / Isi", opsi: ["Liter (L)", "Mililiter (ml)", "Galon"] },
   { grup: "Satuan Panjang / Luas", opsi: ["Meter (m)", "Sentimeter (cm)", "Inci (in)"] },
+  { grup: "Satuan Dapur & Operasional", opsi: ["Papan", "Keranjang", "Drigen", "Kaleng", "Roll", "Ikat", "Peti", "Tabung", "Toples"] },
 ];
 
 const GUDANG = ["Gudang Mayabon", "Gudang Panancangan", "Gudang Panosogan", "Gudang Sentral"];
@@ -467,6 +468,13 @@ export default function InventoryApp() {
   const [tab, setTab] = useState("dashboard");
   const [sidebarTerbuka, setSidebarTerbuka] = useState(() => loadLS("sidebarTerbuka", true));
   useEffect(() => { saveLS("sidebarTerbuka", sidebarTerbuka); }, [sidebarTerbuka]);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 800);
+  const [menuMobileTerbuka, setMenuMobileTerbuka] = useState(false);
+  useEffect(() => {
+    function cekUkuran() { setIsMobile(window.innerWidth <= 800); }
+    window.addEventListener("resize", cekUkuran);
+    return () => window.removeEventListener("resize", cekUkuran);
+  }, []);
   const [search, setSearch] = useState("");
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterGudang, setFilterGudang] = useState("Semua");
@@ -800,7 +808,7 @@ export default function InventoryApp() {
   function simpanProduk(data) {
     if (!data.nama.trim() || !data.kategori) { setErrorForm("Nama dan kategori wajib diisi."); return; }
     if (!data.satuan) { setErrorForm("Satuan wajib dipilih."); return; }
-    if (bisaLihatHarga && data.hargaJual <= data.hargaBeli) { setErrorForm("Harga jual harus lebih besar dari harga beli."); return; }
+    if (bisaLihatHarga && data.hargaJual < data.hargaBeli) { setErrorForm("Harga jual minimal harus sama dengan harga beli."); return; }
     if (data.stok < 0 || data.stokMin < 0) { setErrorForm("Stok tidak boleh negatif."); return; }
 
     if (data.id) {
@@ -1107,15 +1115,61 @@ export default function InventoryApp() {
     return null;
   }
 
+  // Stok Opname: bandingkan stok fisik hasil hitung langsung dengan stok sistem,
+  // lalu catat selisihnya sebagai mutasi Masuk (kalau fisik lebih banyak) atau
+  // Keluar (kalau fisik lebih sedikit) sekaligus, dalam satu batch.
+  function simpanOpname(penyesuaian) {
+    const tgl = new Date();
+    const ymd = `${tgl.getFullYear()}${pad(tgl.getMonth() + 1, 2)}${pad(tgl.getDate(), 2)}`;
+    let nomorBerjalan = nextMutasiNo;
+    const produkUpdate = [];
+    const mutasiBaru = [];
+
+    penyesuaian.forEach(({ produkId, stokFisik }) => {
+      const p = products.find(x => x.id === produkId);
+      if (!p) return;
+      const selisih = stokFisik - p.stok;
+      if (selisih === 0) return;
+      const jenis = selisih > 0 ? "Masuk" : "Keluar";
+      const jumlah = Math.abs(selisih);
+      const kode = `MUT-${ymd}-${pad(nomorBerjalan, 4)}`;
+      nomorBerjalan += 1;
+      const record = {
+        id: uid(), kode, jenis, produkId: p.id, namaProduk: p.nama, kodeBarang: p.kodeBarang, kategori: p.kategori,
+        gudang: p.gudang, jumlah, satuan: p.satuan,
+        keterangan: `Stok Opname — sistem ${p.stok}, fisik ${stokFisik} (${selisih > 0 ? "lebih" : "kurang"} ${jumlah} ${satuanSingkat(p.satuan)})`,
+        oleh: currentUser.nama, stokSebelum: p.stok, stokSesudah: stokFisik, tanggal: tgl.toISOString(), hargaSatuan: p.hargaBeli,
+      };
+      mutasiBaru.push(record);
+      produkUpdate.push({ ...p, stok: stokFisik });
+    });
+
+    if (mutasiBaru.length === 0) {
+      pushToast("info", "Tidak ada selisih untuk disimpan.");
+      return 0;
+    }
+
+    setProducts(prev => prev.map(x => produkUpdate.find(pu => pu.id === x.id) || x));
+    produkUpdate.forEach(pu => simpanKeSupabase("products", pu));
+    setMutasi(prev => [...mutasiBaru, ...prev]);
+    mutasiBaru.forEach(m => simpanKeSupabase("mutasi", m));
+    setNextMutasiNo(nomorBerjalan);
+    simpanCounterKeSupabase(nomorBerjalan);
+    pushToast("success", `${mutasiBaru.length} penyesuaian stok opname berhasil disimpan.`);
+    return mutasiBaru.length;
+  }
+
   const NAV = [
     { id: "dashboard", label: "Dashboard", ikon: LayoutDashboard },
     { id: "inventory", label: "Inventori", ikon: Boxes },
     { id: "masterdata", label: "Master Data", ikon: Database },
     { id: "mutasi", label: "Mutasi Barang", ikon: ArrowRightLeft },
-    { id: "sales", label: "Penjualan", ikon: Receipt },
+    { id: "opname", label: "Stok Opname", ikon: ClipboardCheck },
+    { id: "sales", label: "Barang Keluar", ikon: Receipt },
     { id: "reports", label: "Laporan", ikon: BarChart3 },
     { id: "riwayat", label: "Riwayat Harga", ikon: History },
   ];
+  const tampilLabel = isMobile || sidebarTerbuka;
 
   return (
     <ErrorBoundary>
@@ -1157,31 +1211,59 @@ export default function InventoryApp() {
           .no-print { display: none !important; }
           .area-cetak { color: #000 !important; }
         }
+        html, body { overflow-x: hidden; max-width: 100vw; }
+        @media (max-width: 800px) {
+          .konten-utama { padding: 16px 14px !important; }
+        }
       `}</style>
+
+      {isMobile && menuMobileTerbuka && (
+        <div className="no-print" onClick={() => setMenuMobileTerbuka(false)} style={{ position: "fixed", inset: 0, background: "rgba(6,8,10,0.6)", zIndex: 150 }} />
+      )}
 
       {/* Sidebar */}
       <div className="no-print" style={{
-        width: sidebarTerbuka ? 226 : 72, background: "#171B20", borderRight: "1px solid #2A3138",
-        padding: sidebarTerbuka ? "22px 16px" : "22px 12px", display: "flex", flexDirection: "column", gap: 4,
-        flexShrink: 0, position: "relative", transition: "width 0.22s ease, padding 0.22s ease", overflow: "hidden",
+        width: isMobile ? 240 : (sidebarTerbuka ? 226 : 72),
+        background: "#171B20", borderRight: "1px solid #2A3138",
+        padding: isMobile ? "22px 16px" : (sidebarTerbuka ? "22px 16px" : "22px 12px"),
+        display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, overflow: "hidden",
+        ...(isMobile
+          ? {
+              position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 160,
+              transform: menuMobileTerbuka ? "translateX(0)" : "translateX(-100%)",
+              transition: "transform 0.25s ease", boxShadow: "6px 0 24px rgba(0,0,0,0.4)",
+            }
+          : { position: "relative", transition: "width 0.22s ease, padding 0.22s ease" }
+        ),
       }}>
-        <button
-          onClick={() => setSidebarTerbuka(v => !v)}
-          title={sidebarTerbuka ? "Ciutkan menu" : "Buka menu"}
-          className="icon-btn-hover"
-          style={{
-            position: "absolute", top: 24, right: -12, width: 24, height: 24, borderRadius: "50%",
+        {isMobile && (
+          <button onClick={() => setMenuMobileTerbuka(false)} className="icon-btn-hover" style={{
+            position: "absolute", top: 18, right: 14, width: 26, height: 26, borderRadius: "50%",
             background: "#1D2329", border: "1px solid #2A3138", color: "#8B95A1", display: "flex",
-            alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5,
+            alignItems: "center", justifyContent: "center", padding: 0,
           }}>
-          {sidebarTerbuka ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </button>
+            <X size={14} />
+          </button>
+        )}
+        {!isMobile && (
+          <button
+            onClick={() => setSidebarTerbuka(v => !v)}
+            title={sidebarTerbuka ? "Ciutkan menu" : "Buka menu"}
+            className="icon-btn-hover"
+            style={{
+              position: "absolute", top: 24, right: -12, width: 24, height: 24, borderRadius: "50%",
+              background: "#1D2329", border: "1px solid #2A3138", color: "#8B95A1", display: "flex",
+              alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5,
+            }}>
+            {sidebarTerbuka ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
+        )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 26, padding: "0 6px", justifyContent: sidebarTerbuka ? "flex-start" : "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 26, padding: "0 6px", justifyContent: tampilLabel ? "flex-start" : "center" }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: "rgba(255,255,255,0.06)", border: "1px solid #2A3138", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <img src={LOGO_ICON} alt="GudangKu" style={{ width: 22, height: "auto" }} />
           </div>
-          {sidebarTerbuka && (
+          {tampilLabel && (
             <div style={{ whiteSpace: "nowrap" }}>
               <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, lineHeight: 1.1 }}>GudangKu</div>
               <div style={{ fontSize: 9.5, color: "#5C6570", letterSpacing: 0.4 }}>SISTEM GUDANG TERINTEGRASI</div>
@@ -1189,32 +1271,32 @@ export default function InventoryApp() {
           )}
         </div>
         {NAV.map(n => (
-          <button key={n.id} onClick={() => setTab(n.id)} title={sidebarTerbuka ? undefined : n.label} className={`nav-btn${tab === n.id ? " aktif" : ""}`} style={{
-            display: "flex", alignItems: "center", gap: 10, padding: sidebarTerbuka ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
+          <button key={n.id} onClick={() => { setTab(n.id); if (isMobile) setMenuMobileTerbuka(false); }} title={tampilLabel ? undefined : n.label} className={`nav-btn${tab === n.id ? " aktif" : ""}`} style={{
+            display: "flex", alignItems: "center", gap: 10, padding: tampilLabel ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
             background: tab === n.id ? "#232B32" : "transparent", color: tab === n.id ? "#EDEFF2" : "#8B95A1", fontWeight: tab === n.id ? 600 : 500,
-            justifyContent: sidebarTerbuka ? "flex-start" : "center", whiteSpace: "nowrap",
+            justifyContent: tampilLabel ? "flex-start" : "center", whiteSpace: "nowrap",
           }}>
-            <n.ikon size={17} style={{ flexShrink: 0 }} /> {sidebarTerbuka && n.label}
+            <n.ikon size={17} style={{ flexShrink: 0 }} /> {tampilLabel && n.label}
           </button>
         ))}
 
-        <button onClick={() => setModalNotifikasi(true)} title={sidebarTerbuka ? undefined : `Notifikasi${stokMenipis.length ? ` (${stokMenipis.length})` : ""}`} className="nav-btn" style={{
-          display: "flex", alignItems: "center", gap: 10, padding: sidebarTerbuka ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
+        <button onClick={() => { setModalNotifikasi(true); if (isMobile) setMenuMobileTerbuka(false); }} title={tampilLabel ? undefined : `Notifikasi${stokMenipis.length ? ` (${stokMenipis.length})` : ""}`} className="nav-btn" style={{
+          display: "flex", alignItems: "center", gap: 10, padding: tampilLabel ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
           background: "transparent", color: stokMenipis.length ? "#E8A33D" : "#8B95A1", fontWeight: 500, marginTop: 4,
-          justifyContent: sidebarTerbuka ? "flex-start" : "center", whiteSpace: "nowrap",
+          justifyContent: tampilLabel ? "flex-start" : "center", whiteSpace: "nowrap",
         }}>
-          <Bell size={17} style={{ flexShrink: 0 }} /> {sidebarTerbuka && `Notifikasi ${stokMenipis.length > 0 ? `(${stokMenipis.length})` : ""}`}
+          <Bell size={17} style={{ flexShrink: 0 }} /> {tampilLabel && `Notifikasi ${stokMenipis.length > 0 ? `(${stokMenipis.length})` : ""}`}
         </button>
-        <button onClick={() => setModalSetting(true)} title={sidebarTerbuka ? undefined : "Pengaturan"} className="nav-btn" style={{
-          display: "flex", alignItems: "center", gap: 10, padding: sidebarTerbuka ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
+        <button onClick={() => { setModalSetting(true); if (isMobile) setMenuMobileTerbuka(false); }} title={tampilLabel ? undefined : "Pengaturan"} className="nav-btn" style={{
+          display: "flex", alignItems: "center", gap: 10, padding: tampilLabel ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
           background: "transparent", color: "#8B95A1", fontWeight: 500, marginTop: 4,
-          justifyContent: sidebarTerbuka ? "flex-start" : "center", whiteSpace: "nowrap",
+          justifyContent: tampilLabel ? "flex-start" : "center", whiteSpace: "nowrap",
         }}>
-          <Settings size={17} style={{ flexShrink: 0 }} /> {sidebarTerbuka && "Pengaturan"}
+          <Settings size={17} style={{ flexShrink: 0 }} /> {tampilLabel && "Pengaturan"}
         </button>
 
         <div style={{ marginTop: "auto", borderTop: "1px solid #2A3138", paddingTop: 14 }}>
-          {sidebarTerbuka ? (
+          {tampilLabel ? (
             <>
               <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{currentUser.nama}</div>
               <div style={{ fontSize: 11, color: "#5C6570", marginBottom: 10, whiteSpace: "nowrap" }}>{currentUser.role === "admin" ? "Administrator" : "Staf"} · {currentUser.gudang}</div>
@@ -1231,9 +1313,20 @@ export default function InventoryApp() {
       </div>
 
       {/* Konten utama */}
-      <div className="area-cetak" style={{ flex: 1, padding: "26px 32px", overflowY: "auto" }}>
+      <div className="area-cetak konten-utama" style={{ flex: 1, padding: "26px 32px", overflowY: "auto", minWidth: 0, width: "100%" }}>
+        {isMobile && (
+          <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <button onClick={() => setMenuMobileTerbuka(true)} className="icon-btn-hover" style={{
+              width: 34, height: 34, borderRadius: 8, background: "#1D2329", border: "1px solid #2A3138",
+              color: "#8B95A1", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0,
+            }}>
+              <Menu size={17} />
+            </button>
+            <Logo ukuranIkon={20} ukuranTeks={14} />
+          </div>
+        )}
         {/* Top bar */}
-        <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           <Building2 size={15} color="#8B95A1" />
           {isAdmin ? (
             <select value={filterGudang} onChange={e => setFilterGudang(e.target.value)} style={{ ...inputStyle, padding: "7px 10px" }}>
@@ -1276,6 +1369,12 @@ export default function InventoryApp() {
         {tab === "mutasi" && (
           <div className="tab-fade" key="mutasi">
             <MutasiView mutasi={mutasiGudang} isAdmin={isAdmin} onCatat={() => setModalMutasi(true)} onCetak={cetakInvoiceMutasi} bisaLihatHarga={bisaLihatHarga} />
+          </div>
+        )}
+
+        {tab === "opname" && (
+          <div className="tab-fade" key="opname">
+            <OpnameView produk={productsGudang} warnaKategoriMap={warnaKategoriMap} namaKategori={namaKategori} onSimpan={simpanOpname} />
           </div>
         )}
 
@@ -1455,7 +1554,7 @@ function LandingPage({ onMulai }) {
       `}</style>
 
       {/* Navigasi atas */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 32px", borderBottom: "1px solid #2A3138" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px clamp(16px, 5vw, 32px)", borderBottom: "1px solid #2A3138", flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <img src={LOGO_ICON} alt="" style={{ width: 26, height: "auto" }} />
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 18 }}>GudangKu</span>
@@ -1468,7 +1567,7 @@ function LandingPage({ onMulai }) {
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(63,167,150,0.12)", color: "#3FA796", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 999, marginBottom: 20 }}>
           <Sparkles size={13} /> Sinkron real-time di semua gudang
         </div>
-        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 40, lineHeight: 1.25, margin: 0 }}>
+        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(26px, 6vw, 40px)", lineHeight: 1.25, margin: 0 }}>
           Satu Dasbor untuk Semua Gudang Anda
         </h1>
         <p style={{ color: "#8B95A1", fontSize: 15, lineHeight: 1.7, marginTop: 16 }}>
@@ -1557,9 +1656,9 @@ function LoginView({ onLogin, onKembali }) {
       <LoginAnimation enabled={animasiAktif} />
 
       <form onSubmit={submit} className="kartu-login" style={{
-        position: "relative", zIndex: 3, width: 360, background: "rgba(255,255,255,0.03)", backdropFilter: "blur(16px)",
+        position: "relative", zIndex: 3, width: "min(360px, 90vw)", background: "rgba(255,255,255,0.03)", backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20,
-        padding: "40px 30px", boxShadow: "0 25px 45px rgba(0,0,0,0.2)", textAlign: "center",
+        padding: "min(40px, 8vw) min(30px, 7vw)", boxShadow: "0 25px 45px rgba(0,0,0,0.2)", textAlign: "center",
       }}>
         {onKembali && (
           <button type="button" onClick={onKembali} style={{ background: "none", border: "none", color: "#8c9b9d", fontSize: 12, padding: 0, marginBottom: 18, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
@@ -1909,6 +2008,112 @@ function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga }) {
 }
 
 // ============================================================
+function OpnameView({ produk, warnaKategoriMap, namaKategori, onSimpan }) {
+  const [search, setSearch] = useState("");
+  const [filterKategori, setFilterKategori] = useState("Semua");
+  const [inputFisik, setInputFisik] = useState({});
+  const [konfirmasi, setKonfirmasi] = useState(false);
+
+  const daftar = useMemo(() => produk
+    .filter(p => filterKategori === "Semua" || p.kategori === filterKategori)
+    .filter(p => p.nama.toLowerCase().includes(search.toLowerCase()) || p.kodeBarang.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.nama.localeCompare(b.nama)), [produk, filterKategori, search]);
+
+  const baris = useMemo(() => daftar.map(p => {
+    const raw = inputFisik[p.id];
+    const adaInput = raw !== undefined && raw !== "";
+    const stokFisik = adaInput ? Number(raw) : null;
+    const selisih = adaInput ? stokFisik - p.stok : null;
+    return { p, adaInput, stokFisik, selisih };
+  }), [daftar, inputFisik]);
+
+  const berbeda = baris.filter(b => b.adaInput && b.selisih !== 0);
+  const totalLebih = berbeda.filter(b => b.selisih > 0).reduce((s, b) => s + b.selisih, 0);
+  const totalKurang = berbeda.filter(b => b.selisih < 0).reduce((s, b) => s + Math.abs(b.selisih), 0);
+
+  function simpan() {
+    onSimpan(berbeda.map(b => ({ produkId: b.p.id, stokFisik: b.stokFisik })));
+    setInputFisik({});
+    setKonfirmasi(false);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Stok Opname</h1>
+          <p style={{ color: "#8B95A1", marginTop: 4 }}>Hitung stok fisik di lapangan, bandingkan dengan catatan sistem. Selisihnya otomatis tercatat sebagai mutasi Masuk/Keluar yang presisi.</p>
+        </div>
+      </div>
+      <BarcodeDivider />
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+        <KartuKPI ikon={ClipboardCheck} label="Item Diperiksa" nilai={baris.filter(b => b.adaInput).length} sub={`dari ${daftar.length} total item`} warna="#6C8EBF" />
+        <KartuKPI ikon={AlertTriangle} label="Ditemukan Selisih" nilai={berbeda.length} sub="item tidak sesuai catatan" warna="#E8A33D" />
+        <KartuKPI ikon={ArrowUp} label="Kelebihan Stok" nilai={totalLebih} sub="fisik lebih banyak dari sistem" warna="#3FA796" />
+        <KartuKPI ikon={ArrowDown} label="Kekurangan Stok" nilai={totalKurang} sub="fisik lebih sedikit dari sistem" warna="#E2574C" />
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+          <Search size={14} color="#5C6570" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari kode atau nama produk..." style={{ ...inputStyle, width: "100%", paddingLeft: 30 }} />
+        </div>
+        <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={inputStyle}>
+          <option>Semua</option>
+          {namaKategori.map(k => <option key={k}>{k}</option>)}
+        </select>
+      </div>
+
+      <div style={{ background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, overflow: "hidden", overflowX: "auto" }}>
+        <table>
+          <thead>
+            <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase" }}>
+              <th>Kode</th><th>Produk</th><th>Kategori</th><th>Stok Sistem</th><th>Stok Fisik</th><th>Selisih</th>
+            </tr>
+          </thead>
+          <tbody>
+            {baris.map(({ p, adaInput, selisih }) => (
+              <tr key={p.id} style={{ borderTop: "1px solid #2A3138", fontSize: 13, background: adaInput && selisih !== 0 ? "rgba(232,163,61,0.05)" : "none" }}>
+                <td style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#8B95A1" }}>{p.kodeBarang}</td>
+                <td style={{ fontWeight: 500 }}>{p.nama}</td>
+                <td><Badge warna={warnaKategoriMap[p.kategori]}>{p.kategori}</Badge></td>
+                <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{p.stok} {satuanSingkat(p.satuan)}</td>
+                <td>
+                  <input type="number" value={inputFisik[p.id] ?? ""} placeholder={String(p.stok)}
+                    onChange={e => setInputFisik(prev => ({ ...prev, [p.id]: e.target.value }))}
+                    style={{ ...inputStyle, width: 90 }} />
+                </td>
+                <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: !adaInput ? "#5C6570" : selisih === 0 ? "#8B95A1" : selisih > 0 ? "#3FA796" : "#E2574C" }}>
+                  {adaInput ? (selisih > 0 ? `+${selisih}` : selisih) : "-"}
+                </td>
+              </tr>
+            ))}
+            {daftar.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada produk yang cocok dengan pencarian.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16 }}>
+        <span style={{ fontSize: 12, color: "#8B95A1" }}>{berbeda.length} item akan disesuaikan</span>
+        {!konfirmasi ? (
+          <button disabled={berbeda.length === 0} onClick={() => setKonfirmasi(true)} className="btn-primary-glow"
+            style={{ ...btnPrimary, opacity: berbeda.length === 0 ? 0.5 : 1, cursor: berbeda.length === 0 ? "not-allowed" : "pointer" }}>
+            Simpan Penyesuaian
+          </button>
+        ) : (
+          <>
+            <span style={{ fontSize: 12, color: "#E8A33D" }}>Yakin? Stok sistem akan diubah mengikuti hasil hitung fisik.</span>
+            <button onClick={() => setKonfirmasi(false)} style={btnSecondary}>Batal</button>
+            <button onClick={simpan} className="btn-primary-glow" style={btnPrimary}>Ya, Simpan</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
   const [filterJenis, setFilterJenis] = useState("Semua");
   const [filterKategori, setFilterKategori] = useState("Semua");
@@ -2026,16 +2231,16 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Riwayat Penjualan</h1>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Riwayat Barang Keluar</h1>
           <p style={{ color: "#8B95A1", marginTop: 4 }}>Setiap transaksi otomatis mengurangi stok gudang. {isAdmin && "Admin dapat mengedit atau menghapus transaksi yang salah input."}</p>
         </div>
         <div className="no-print" style={{ display: "flex", gap: 10 }}>
           <TombolEkspor
-            onExcel={() => eksporExcel([{ nama: "Penjualan", data: sales.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })) }], "penjualan")}
-            onCSV={() => eksporCSV(sales.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })), "penjualan")}
+            onExcel={() => eksporExcel([{ nama: "Penjualan", data: sales.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })) }], "barang-keluar")}
+            onCSV={() => eksporCSV(sales.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })), "barang-keluar")}
             onPDF={() => window.print()}
           />
-          <button onClick={onJualBaru} className="btn-primary-glow" style={{ ...btnPrimary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Catat Penjualan</button>
+          <button onClick={onJualBaru} className="btn-primary-glow" style={{ ...btnPrimary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Catat Barang Keluar</button>
         </div>
       </div>
       <BarcodeDivider />
@@ -2731,7 +2936,7 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
 
   return (
     <Overlay onBatal={onBatal}>
-      <h3 style={{ marginTop: 0, fontFamily: "'Space Grotesk', sans-serif" }}>Catat Penjualan</h3>
+      <h3 style={{ marginTop: 0, fontFamily: "'Space Grotesk', sans-serif" }}>Catat Barang Keluar</h3>
       <Grid>
         <Field label="Cari Produk">
           <div style={{ position: 'relative' }}>
@@ -3006,7 +3211,7 @@ function Overlay({ children, onBatal }) {
   );
 }
 
-function Grid({ children }) { return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}>{children}</div>; }
+function Grid({ children }) { return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 16 }}>{children}</div>; }
 function Field({ label, children }) { return <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#8B95A1" }}>{label}{children}</label>; }
 
 const inputStyle = { background: "#14181D", border: "1px solid #2A3138", borderRadius: 6, padding: "9px 10px", color: "#EDEFF2", fontSize: 13, outline: "none" };
