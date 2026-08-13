@@ -1162,7 +1162,7 @@ export default function InventoryApp() {
   const NAV = [
     { id: "dashboard", label: "Dashboard", ikon: LayoutDashboard },
     { id: "inventory", label: "Inventori", ikon: Boxes },
-    { id: "masterdata", label: "Master Data", ikon: Database },
+    { id: "masterdata", label: "Master Data", ikon: Database, adminOnly: true },
     { id: "mutasi", label: "Mutasi Barang", ikon: ArrowRightLeft },
     { id: "opname", label: "Stok Opname", ikon: ClipboardCheck },
     { id: "sales", label: "Barang Keluar", ikon: Receipt },
@@ -1270,7 +1270,7 @@ export default function InventoryApp() {
             </div>
           )}
         </div>
-        {NAV.map(n => (
+        {NAV.filter(n => !n.adminOnly || isAdmin).map(n => (
           <button key={n.id} onClick={() => { setTab(n.id); if (isMobile) setMenuMobileTerbuka(false); }} title={tampilLabel ? undefined : n.label} className={`nav-btn${tab === n.id ? " aktif" : ""}`} style={{
             display: "flex", alignItems: "center", gap: 10, padding: tampilLabel ? "10px 12px" : "10px 0", borderRadius: 8, border: "none", textAlign: "left",
             background: tab === n.id ? "#232B32" : "transparent", color: tab === n.id ? "#EDEFF2" : "#8B95A1", fontWeight: tab === n.id ? 600 : 500,
@@ -1360,7 +1360,7 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {tab === "masterdata" && (
+        {tab === "masterdata" && isAdmin && (
           <div className="tab-fade" key="masterdata">
             <MasterDataView produk={products} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
           </div>
@@ -2227,17 +2227,33 @@ function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
 
 // ============================================================
 function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga = true }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterGudang, setFilterGudang] = useState("Semua");
+  const [tanggalMulai, setTanggalMulai] = useState("");
+  const [tanggalSelesai, setTanggalSelesai] = useState("");
+
+  const daftar = useMemo(() => sales.filter(s => {
+    if (filterGudang !== "Semua" && s.gudang !== filterGudang) return false;
+    if (tanggalMulai && s.tanggal < `${tanggalMulai}T00:00:00.000Z`) return false;
+    if (tanggalSelesai && s.tanggal > `${tanggalSelesai}T23:59:59.999Z`) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (![s.namaProduk, s.kodeBarang, s.gudang, s.keterangan].some(v => String(v || "").toLowerCase().includes(q))) return false;
+    }
+    return true;
+  }), [sales, filterGudang, searchQuery, tanggalMulai, tanggalSelesai]);
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0 }}>Riwayat Barang Keluar</h1>
           <p style={{ color: "#8B95A1", marginTop: 4 }}>Setiap transaksi otomatis mengurangi stok gudang. {isAdmin && "Admin dapat mengedit atau menghapus transaksi yang salah input."}</p>
         </div>
         <div className="no-print" style={{ display: "flex", gap: 10 }}>
           <TombolEkspor
-            onExcel={() => eksporExcel([{ nama: "Penjualan", data: sales.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })) }], "barang-keluar")}
-            onCSV={() => eksporCSV(sales.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })), "barang-keluar")}
+            onExcel={() => eksporExcel([{ nama: "Penjualan", data: daftar.map(s => ({ Tanggal: tanggalID(s.tanggal), "Kode Barang": s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { "Harga Jual": s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })) }], "barang-keluar")}
+            onCSV={() => eksporCSV(daftar.map(s => ({ Tanggal: tanggalID(s.tanggal), KodeBarang: s.kodeBarang, Produk: s.namaProduk, Gudang: s.gudang, Qty: s.jumlah, ...(bisaLihatHarga ? { HargaJual: s.hargaJualSaat, Total: s.total, Profit: s.profit } : {}) })), "barang-keluar")}
             onPDF={() => window.print()}
           />
           <button onClick={onJualBaru} className="btn-primary-glow" style={{ ...btnPrimary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Catat Barang Keluar</button>
@@ -2245,7 +2261,19 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
       </div>
       <BarcodeDivider />
 
-      <div style={{ background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, overflow: "hidden", maxHeight: 560, overflowY: "auto" }}>
+      <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari produk, kode, gudang, keterangan..." style={{ ...inputStyle, minWidth: 240, flex: 1 }} />
+        {isAdmin && (
+          <select value={filterGudang} onChange={e => setFilterGudang(e.target.value)} style={{ ...inputStyle, width: 180 }}>
+            <option value="Semua">Semua Gudang</option>
+            {GUDANG.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        )}
+        <input type="date" value={tanggalMulai} onChange={e => setTanggalMulai(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} />
+        <input type="date" value={tanggalSelesai} onChange={e => setTanggalSelesai(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} />
+      </div>
+
+      <div style={{ background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, overflow: "hidden", overflowX: "auto", maxHeight: 560, overflowY: "auto" }}>
         <table>
           <thead>
             <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase", position: "sticky", top: 0 }}>
@@ -2255,7 +2283,7 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
             </tr>
           </thead>
           <tbody>
-            {sales.map(s => (
+            {daftar.map(s => (
               <tr key={s.id} style={{ borderTop: "1px solid #2A3138", fontSize: 13 }}>
                 <td style={{ color: "#8B95A1" }}>{tanggalID(s.tanggal)}</td>
                 <td>{s.namaProduk}</td>
@@ -2277,6 +2305,7 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
                 </td>
               </tr>
             ))}
+            {daftar.length === 0 && <tr><td colSpan={bisaLihatHarga ? 9 : 6} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada transaksi yang cocok dengan filter.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2787,19 +2816,46 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
   const produkGudang = useMemo(() => products.filter(p => p.gudang === gudangPilihan), [products, gudangPilihan]);
   const [jenis, setJenis] = useState("Masuk");
   const [produkId, setProdukId] = useState(produkGudang[0]?.id || "");
+  const [produkQuery, setProdukQuery] = useState(produkGudang[0]?.nama || "");
+  const [saranTerbuka, setSaranTerbuka] = useState(false);
   const [jumlah, setJumlah] = useState(1);
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
   const [keterangan, setKeterangan] = useState("");
   const [hargaSatuan, setHargaSatuan] = useState("");
+  const [hargaDiubahManual, setHargaDiubahManual] = useState(false);
   const [tujuanGudang, setTujuanGudang] = useState(() => GUDANG.find(g => g !== (isAdmin ? GUDANG[0] : currentUser.gudang)) || GUDANG[0]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!produkGudang.find(p => p.id === produkId)) setProdukId(produkGudang[0]?.id || "");
+    const p0 = produkGudang[0];
+    setProdukId(produkGudang.find(p => p.id === produkId) ? produkId : (p0?.id || ""));
+    if (!produkGudang.find(p => p.id === produkId)) setProdukQuery(p0?.nama || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gudangPilihan]);
 
   const produkDipilih = produkGudang.find(p => p.id === produkId);
+
+  // Isi otomatis Harga Satuan dari harga beli terakhir produk yang dipilih --
+  // tetap bisa diedit manual kalau harganya memang berubah.
+  useEffect(() => {
+    if (produkDipilih && !hargaDiubahManual) {
+      setHargaSatuan(produkDipilih.hargaBeli > 0 ? String(produkDipilih.hargaBeli) : "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produkId]);
+
+  const saranProduk = useMemo(() => {
+    const q = produkQuery.trim().toLowerCase();
+    if (!q) return produkGudang.slice(0, 8);
+    return produkGudang.filter(p => p.nama.toLowerCase().includes(q) || p.kodeBarang.toLowerCase().includes(q)).slice(0, 8);
+  }, [produkGudang, produkQuery]);
+
+  function pilihProduk(p) {
+    setProdukId(p.id);
+    setProdukQuery(p.nama);
+    setHargaDiubahManual(false);
+    setSaranTerbuka(false);
+  }
 
   return (
     <Overlay onBatal={onBatal}>
@@ -2837,9 +2893,41 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
         )}
         <Field label="Tanggal"><input type="date" value={tanggal} onChange={e => setTanggal(e.target.value)} style={inputStyle} /></Field>
         <Field label="Produk">
-          <select value={produkId} onChange={e => setProdukId(e.target.value)} style={inputStyle}>
-            {produkGudang.map(p => <option key={p.id} value={p.id}>{p.nama} ({p.stok} {satuanSingkat(p.satuan)} tersedia)</option>)}
-          </select>
+          <div style={{ position: "relative" }}>
+            <input
+              value={produkQuery}
+              onChange={e => { setProdukQuery(e.target.value); setSaranTerbuka(true); if (!e.target.value) setProdukId(""); }}
+              onFocus={() => setSaranTerbuka(true)}
+              onBlur={() => setTimeout(() => setSaranTerbuka(false), 150)}
+              placeholder="Ketik nama atau kode produk..."
+              autoComplete="off"
+              style={inputStyle}
+            />
+            {saranTerbuka && saranProduk.length > 0 && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20,
+                background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, overflow: "hidden",
+                boxShadow: "0 8px 20px rgba(0,0,0,0.35)", maxHeight: 220, overflowY: "auto",
+              }}>
+                {saranProduk.map(p => (
+                  <button type="button" key={p.id} onMouseDown={() => pilihProduk(p)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "9px 12px",
+                      background: p.id === produkId ? "#232B32" : "none", border: "none", borderBottom: "1px solid #2A3138",
+                      color: "#EDEFF2", fontSize: 12.5, cursor: "pointer",
+                    }}>
+                    <div style={{ fontWeight: 600 }}>{p.nama}</div>
+                    <div style={{ color: "#8B95A1", fontSize: 11 }}>{p.kodeBarang} • {p.stok} {satuanSingkat(p.satuan)} tersedia</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {saranTerbuka && produkQuery && saranProduk.length === 0 && (
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20, background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#5C6570" }}>
+                Tidak ada produk cocok di gudang ini.
+              </div>
+            )}
+          </div>
         </Field>
         <Field label={`Jumlah ${produkDipilih ? `(${satuanSingkat(produkDipilih.satuan)})` : ""}`}>
           <input type="number" min={1} value={jumlah} onChange={e => setJumlah(Number(e.target.value))} style={inputStyle} />
@@ -2849,6 +2937,7 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
             <input type="text" inputMode="numeric" value={hargaSatuan} onChange={e => {
               const raw = e.target.value.replace(/[^0-9]/g, '');
               setHargaSatuan(raw.replace(/^0+/, ''));
+              setHargaDiubahManual(true);
             }} placeholder={jenis === "Masuk" ? "Masukkan harga beli per unit" : "Opsional untuk keluar/transfer"} style={inputStyle} />
           </Field>
         )}
@@ -2857,6 +2946,7 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
             <select value={tujuanGudang} onChange={e => setTujuanGudang(e.target.value)} style={inputStyle}>
               {GUDANG.filter(g => g !== (isAdmin ? gudangPilihan : currentUser.gudang)).map(g => <option key={g} value={g}>{g}</option>)}
             </select>
+            <span style={{ fontSize: 11, color: "#5C6570" }}>Kalau produk ini belum ada di gudang tujuan, akan otomatis dibuatkan -- tidak perlu diinput manual dulu.</span>
           </Field>
         )}
       </Grid>
@@ -2872,7 +2962,7 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onBatal} style={btnSecondary}>Batal</button>
         <button onClick={() => {
-          if (!produkId) { setError("Tidak ada produk di gudang ini."); return; }
+          if (!produkId) { setError("Pilih produk yang sesuai dari daftar terlebih dahulu."); return; }
           const err = onSimpan(jenis, produkId, jumlah, tanggal, keterangan, null, Number(hargaSatuan || 0), tujuanGudang);
           if (err) setError(err);
         }} className="btn-primary-glow" style={btnPrimary}>Simpan & Buat Invoice</button>
@@ -2928,11 +3018,20 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
   const [tujuanGudang, setTujuanGudang] = useState(GUDANG.find(g => g !== products[0]?.gudang) || GUDANG[0]);
   const [jumlah, setJumlah] = useState("");
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
-  const [hargaJualOverride, setHargaJualOverride] = useState("");
+  const [hargaJualOverride, setHargaJualOverride] = useState(products[0]?.hargaJual > 0 ? String(products[0].hargaJual) : "");
+  const [hargaDiubahManual, setHargaDiubahManual] = useState(false);
   const [keterangan, setKeterangan] = useState("");
   const [error, setError] = useState("");
   const filteredProducts = products.filter(p => p.nama.toLowerCase().includes(productSearch.toLowerCase()) || p.kodeBarang.toLowerCase().includes(productSearch.toLowerCase()));
   const produkDipilih = products.find(p => p.id === produkId);
+
+  // Isi otomatis Harga Jual dari harga default produk saat dipilih -- tetap bisa diedit manual.
+  useEffect(() => {
+    if (produkDipilih && !hargaDiubahManual) {
+      setHargaJualOverride(produkDipilih.hargaJual > 0 ? String(produkDipilih.hargaJual) : "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produkId]);
 
   return (
     <Overlay onBatal={onBatal}>
@@ -2946,6 +3045,7 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
               const match = products.find(p => p.nama.toLowerCase() === next.toLowerCase() || p.kodeBarang.toLowerCase() === next.toLowerCase() || `${p.nama} (${p.kodeBarang})`.toLowerCase() === next.toLowerCase());
               if (match) {
                 setProdukId(match.id);
+                setHargaDiubahManual(false);
               } else {
                 setProdukId("");
               }
@@ -2956,6 +3056,7 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
                   <button key={p.id} type="button" onClick={() => {
                     setProdukId(p.id);
                     setProductSearch(`${p.nama} (${p.kodeBarang})`);
+                    setHargaDiubahManual(false);
                   }} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: 'none', border: 'none', color: '#EDEFF2', cursor: 'pointer' }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{p.nama}</div>
                     <div style={{ fontSize: 11, color: '#8B95A1' }}>{p.kodeBarang}</div>
@@ -2983,7 +3084,8 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
           <Field label="Harga Jual per Unit (Rp)"><input type="text" inputMode="numeric" value={hargaJualOverride} onChange={e => {
               const raw = e.target.value.replace(/[^0-9]/g, '');
               setHargaJualOverride(raw.replace(/^0+/, ''));
-            }} style={inputStyle} placeholder="Kosongkan untuk gunakan harga default" /></Field>
+              setHargaDiubahManual(true);
+            }} style={inputStyle} placeholder="Terisi otomatis dari harga produk" /></Field>
         )}
       </Grid>
       {transactionType === "Transfer" && (
