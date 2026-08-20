@@ -11,7 +11,7 @@ import {
   LogOut, Bell, ArrowUp, ArrowDown, Download, FileSpreadsheet, Printer,
   Building2, Mail, MessageCircle, Lock, User, Settings, ArrowRightLeft,
   PackagePlus, PackageMinus, CheckCircle2, XCircle, Info, FileText, Tags,
-  Sparkles, ChevronLeft, ChevronRight, Database, Menu, ClipboardCheck
+  Sparkles, ChevronLeft, ChevronRight, Database, Menu, ClipboardCheck, TrendingDown
 } from "lucide-react";
 import LoginAnimation from "./LoginAnimation";
 
@@ -455,8 +455,101 @@ const itemDropdown = {
 };
 
 // ============================================================
+// ============================================================
+// Latar doodle animasi: ikon-ikon garis bertema gudang/bisnis (kaca pembesar,
+// kotak, barcode, grafik, amplop, roda gigi, troli, koin) melayang pelan di
+// belakang semua halaman -- hijau redup, tema gelap, murni CSS+SVG.
+function IkonDoodle({ jenis }) {
+  const s = { stroke: "#3FA796", strokeWidth: 1.6, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (jenis) {
+    case "kaca": return <svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="20" cy="20" r="12" {...s} /><line x1="29" y1="29" x2="41" y2="41" {...s} /></svg>;
+    case "kotak": return <svg viewBox="0 0 48 48" width="100%" height="100%"><polygon points="24,6 42,16 42,34 24,44 6,34 6,16" {...s} /><line x1="24" y1="24" x2="24" y2="44" {...s} /><line x1="24" y1="24" x2="42" y2="16" {...s} /><line x1="24" y1="24" x2="6" y2="16" {...s} /></svg>;
+    case "barcode": return <svg viewBox="0 0 48 48" width="100%" height="100%"><rect x="6" y="10" width="36" height="28" rx="2" {...s} />{[10, 14, 20, 24, 30, 34, 38].map((x, i) => <line key={i} x1={x} y1="14" x2={x} y2="34" {...s} strokeWidth={i % 2 ? 1.2 : 2.2} />)}</svg>;
+    case "pie": return <svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="24" cy="24" r="16" {...s} /><line x1="24" y1="24" x2="24" y2="8" {...s} /><line x1="24" y1="24" x2="37" y2="32" {...s} /></svg>;
+    case "amplop": return <svg viewBox="0 0 48 48" width="100%" height="100%"><rect x="6" y="12" width="36" height="24" rx="2" {...s} /><polyline points="6,14 24,28 42,14" {...s} /></svg>;
+    case "gear": return <svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="24" cy="24" r="9" {...s} />{[0, 45, 90, 135, 180, 225, 270, 315].map((r, i) => (
+      <line key={i} x1={24 + 9 * Math.cos(r * Math.PI / 180)} y1={24 + 9 * Math.sin(r * Math.PI / 180)} x2={24 + 16 * Math.cos(r * Math.PI / 180)} y2={24 + 16 * Math.sin(r * Math.PI / 180)} {...s} />
+    ))}</svg>;
+    case "troli": return <svg viewBox="0 0 48 48" width="100%" height="100%"><polyline points="6,8 12,8 18,30 40,30 44,16 15,16" {...s} /><circle cx="20" cy="38" r="3" {...s} /><circle cx="36" cy="38" r="3" {...s} /></svg>;
+    case "koin": return <svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="24" cy="24" r="16" {...s} /><text x="24" y="30" fontSize="16" textAnchor="middle" fill="#3FA796" stroke="none" fontFamily="'Space Grotesk', sans-serif">Rp</text></svg>;
+    case "grafik": return <svg viewBox="0 0 48 48" width="100%" height="100%"><polyline points="4,34 14,22 22,28 34,10 44,16" {...s} /><circle cx="34" cy="10" r="2" fill="#3FA796" stroke="none" /></svg>;
+    case "folder": return <svg viewBox="0 0 48 48" width="100%" height="100%"><path d="M6 14 h12 l4 5 h20 v22 h-36 z" {...s} /><line x1="14" y1="26" x2="34" y2="26" {...s} /><line x1="14" y1="32" x2="34" y2="32" {...s} /></svg>;
+    case "laptop": return <svg viewBox="0 0 48 48" width="100%" height="100%"><rect x="10" y="10" width="28" height="18" rx="1.5" {...s} /><line x1="6" y1="34" x2="42" y2="34" {...s} /></svg>;
+    default: return null;
+  }
+}
+
+function LatarDoodleAnimasi() {
+  const doodle = useMemo(() => [
+    { jenis: "kaca", top: "6%", left: "8%", size: 46, durasi: 16, delay: 0 },
+    { jenis: "kotak", top: "14%", left: "88%", size: 58, durasi: 20, delay: 1 },
+    { jenis: "barcode", top: "78%", left: "5%", size: 50, durasi: 18, delay: 0.6 },
+    { jenis: "pie", top: "4%", left: "45%", size: 44, durasi: 14, delay: 1.4 },
+    { jenis: "amplop", top: "88%", left: "60%", size: 46, durasi: 17, delay: 0.3 },
+    { jenis: "gear", top: "38%", left: "94%", size: 50, durasi: 22, delay: 0.8 },
+    { jenis: "troli", top: "60%", left: "90%", size: 52, durasi: 19, delay: 1.8 },
+    { jenis: "koin", top: "48%", left: "3%", size: 44, durasi: 15, delay: 0.5 },
+    { jenis: "grafik", top: "24%", left: "20%", size: 48, durasi: 21, delay: 1.2 },
+    { jenis: "folder", top: "70%", left: "35%", size: 46, durasi: 16, delay: 0.9 },
+    { jenis: "laptop", top: "90%", left: "14%", size: 50, durasi: 18, delay: 1.6 },
+    { jenis: "koin", top: "10%", left: "68%", size: 40, durasi: 20, delay: 0.2 },
+  ], []);
+
+  return (
+    <div aria-hidden="true" style={{ position: "fixed", inset: 0, overflow: "hidden", zIndex: 0, pointerEvents: "none" }}>
+      <style>{`
+        @keyframes gkDoodleMengambang { 0% { transform: translate(0,0) rotate(-3deg); } 50% { transform: translate(10px,-14px) rotate(3deg); } 100% { transform: translate(0,0) rotate(-3deg); } }
+      `}</style>
+      {doodle.map((d, i) => (
+        <div key={i} style={{
+          position: "absolute", top: d.top, left: d.left, width: d.size, height: d.size, opacity: 0.14,
+          animation: `gkDoodleMengambang ${d.durasi}s ease-in-out ${d.delay}s infinite`,
+        }}>
+          <IkonDoodle jenis={d.jenis} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function InventoryApp() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem("gudangku_sesi");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+
+  // Sesi bertahan saat halaman di-reload (sessionStorage), tapi otomatis kosong lagi
+  // begitu tab/browser ditutup -- itu perilaku bawaan sessionStorage, pas dengan yang diminta.
+  useEffect(() => {
+    try {
+      if (currentUser) {
+        const { password, ...tanpaPassword } = currentUser;
+        sessionStorage.setItem("gudangku_sesi", JSON.stringify(tanpaPassword));
+      } else {
+        sessionStorage.removeItem("gudangku_sesi");
+      }
+    } catch { /* abaikan kalau sessionStorage tidak tersedia */ }
+  }, [currentUser]);
+
+  // Auto-logout setelah 1 jam tanpa aktivitas sama sekali (klik, ketik, geser, sentuh).
+  useEffect(() => {
+    if (!currentUser) return;
+    let timer;
+    const BATAS_DIAM_MS = 60 * 60 * 1000; // 1 jam
+    function mulaiUlangTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => setCurrentUser(null), BATAS_DIAM_MS);
+    }
+    const peristiwa = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+    peristiwa.forEach(ev => window.addEventListener(ev, mulaiUlangTimer));
+    mulaiUlangTimer();
+    return () => {
+      clearTimeout(timer);
+      peristiwa.forEach(ev => window.removeEventListener(ev, mulaiUlangTimer));
+    };
+  }, [currentUser]);
   const [tampilLanding, setTampilLanding] = useState(true);
   const [categories, setCategories] = useState(() => loadLS("categories", CATEGORY_SEED));
   const [products, setProducts] = useState(() => loadLS("products", SEED_PRODUCTS.map(p => ({ ...p, createdAt: p.createdAt || new Date().toISOString() }))));
@@ -491,8 +584,7 @@ export default function InventoryApp() {
   const [invoiceTampil, setInvoiceTampil] = useState(null);
   const [errorForm, setErrorForm] = useState("");
   const [toasts, setToasts] = useState([]);
-  const [settings, setSettings] = useState(() => loadLS("settings", { theme: "dark", waNumber: "6281234567890", notifSchedule: "08:30", autoNotify: false, hargaVisibility: {} }));
-  const lastNotifyTimeRef = useRef(null);
+  const [settings, setSettings] = useState(() => loadLS("settings", { theme: "dark", hargaVisibility: {}, kontakGudang: {} }));
 
   // Simpan otomatis ke localStorage setiap kali data berubah, supaya tidak hilang saat refresh.
   useEffect(() => { saveLS("categories", categories); }, [categories]);
@@ -540,7 +632,7 @@ export default function InventoryApp() {
   }
 
   function simpanSettingsKeSupabase(s) {
-    supabase.from("app_settings").upsert({ id: 1, theme: s.theme, wa_number: s.waNumber, notif_schedule: s.notifSchedule, auto_notify: s.autoNotify, harga_visibility: s.hargaVisibility || {} }).then(({ error }) => {
+    supabase.from("app_settings").upsert({ id: 1, theme: s.theme, harga_visibility: s.hargaVisibility || {}, kontak_gudang: s.kontakGudang || {} }).then(({ error }) => {
       if (error) { console.error("Supabase settings:", error); pushToast("error", "Gagal menyimpan pengaturan ke server."); }
     });
   }
@@ -612,7 +704,7 @@ export default function InventoryApp() {
           if (r.data) setRiwayatHarga(r.data.map(row => keCamel(row, "riwayat_harga")));
         }
 
-        if (st.data) setSettings(prev => ({ ...prev, theme: st.data.theme, waNumber: st.data.wa_number, notifSchedule: st.data.notif_schedule, autoNotify: st.data.auto_notify, hargaVisibility: st.data.harga_visibility || {} }));
+        if (st.data) setSettings(prev => ({ ...prev, theme: st.data.theme, hargaVisibility: st.data.harga_visibility || {}, kontakGudang: st.data.kontak_gudang || {} }));
         if (c.data) setNextMutasiNo(c.data.value);
       } catch (e) {
         console.error("Gagal memuat data dari server:", e);
@@ -711,24 +803,10 @@ export default function InventoryApp() {
     return Object.entries(peta).map(([kategori, nilai]) => ({ kategori, nilai }));
   }, [productsGudang]);
 
-  useEffect(() => {
-    if (!settings.autoNotify || !settings.waNumber || stokMenipis.length === 0) return;
-    const sekarang = new Date();
-    const waktu = `${pad(sekarang.getHours(), 2)}:${pad(sekarang.getMinutes(), 2)}`;
-    if (waktu !== settings.notifSchedule) return;
-    if (lastNotifyTimeRef.current === waktu) return;
-    lastNotifyTimeRef.current = waktu;
-
-    const tujuan = settings.waNumber.replace(/\D/g, "");
-    if (!tujuan) {
-      pushToast("error", "Nomor WhatsApp tidak valid untuk notifikasi otomatis.");
-      return;
-    }
-    const baris = stokMenipis.map(p => `• ${p.nama} (${p.kodeBarang}) - sisa ${p.stok} ${satuanSingkat(p.satuan)}`).join("\n");
-    const teks = `Peringatan Stok Menipis - GudangKu\n\n${baris}`;
-    window.open(`https://wa.me/${tujuan}?text=${encodeURIComponent(teks)}`, "_blank");
-    pushToast("info", "Mencoba mengirim notifikasi WhatsApp stok minim secara otomatis.");
-  }, [settings, stokMenipis]);
+  const riwayatHargaGudang = useMemo(() => {
+    const idSet = new Set(productsGudang.map(p => p.id));
+    return riwayatHarga.filter(r => idSet.has(r.produkId));
+  }, [riwayatHarga, productsGudang]);
 
   const produkFilter = useMemo(() => {
     return productsGudang.filter(p => {
@@ -742,10 +820,6 @@ export default function InventoryApp() {
       return a.stok / (a.stokMin || 1) - b.stok / (b.stokMin || 1);
     });
   }, [productsGudang, search, filterKategori]);
-
-  useEffect(() => {
-    console.log('currentUser', currentUser);
-  }, [currentUser]);
 
   if (!currentUser) {
     if (tampilLanding) return <LandingPage onMulai={() => setTampilLanding(false)} />;
@@ -1217,6 +1291,8 @@ export default function InventoryApp() {
         }
       `}</style>
 
+      <LatarDoodleAnimasi />
+
       {isMobile && menuMobileTerbuka && (
         <div className="no-print" onClick={() => setMenuMobileTerbuka(false)} style={{ position: "fixed", inset: 0, background: "rgba(6,8,10,0.6)", zIndex: 150 }} />
       )}
@@ -1233,7 +1309,7 @@ export default function InventoryApp() {
               transform: menuMobileTerbuka ? "translateX(0)" : "translateX(-100%)",
               transition: "transform 0.25s ease", boxShadow: "6px 0 24px rgba(0,0,0,0.4)",
             }
-          : { position: "relative", transition: "width 0.22s ease, padding 0.22s ease" }
+          : { position: "relative", zIndex: 1, transition: "width 0.22s ease, padding 0.22s ease" }
         ),
       }}>
         {isMobile && (
@@ -1251,7 +1327,7 @@ export default function InventoryApp() {
             title={sidebarTerbuka ? "Ciutkan menu" : "Buka menu"}
             className="icon-btn-hover"
             style={{
-              position: "absolute", top: 24, right: -12, width: 24, height: 24, borderRadius: "50%",
+              position: "absolute", top: 104, right: -12, width: 24, height: 24, borderRadius: "50%",
               background: "#1D2329", border: "1px solid #2A3138", color: "#8B95A1", display: "flex",
               alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5,
             }}>
@@ -1313,7 +1389,7 @@ export default function InventoryApp() {
       </div>
 
       {/* Konten utama */}
-      <div className="area-cetak konten-utama" style={{ flex: 1, padding: "26px 32px", overflowY: "auto", minWidth: 0, width: "100%" }}>
+      <div className="area-cetak konten-utama" style={{ flex: 1, padding: "26px 32px", overflowY: "auto", minWidth: 0, width: "100%", position: "relative", zIndex: 1 }}>
         {isMobile && (
           <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
             <button onClick={() => setMenuMobileTerbuka(true)} className="icon-btn-hover" style={{
@@ -1340,10 +1416,8 @@ export default function InventoryApp() {
 
         {tab === "dashboard" && (
           <div className="tab-fade" key="dashboard">
-            <DashboardView nilaiTotalStok={nilaiTotalStok} totalItems={productsGudang.length} stokMenipis={stokMenipis}
-              totalPendapatan={totalPendapatan} totalProfit={totalProfit} totalTransaksi={totalTransaksi}
-              mutasiHariIni={mutasiHariIni} trenHarian={trenHarian} produkTerlaris={produkTerlaris}
-              distribusiKategori={distribusiKategori} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
+            <DashboardView products={productsGudang} sales={salesGudang} mutasi={mutasiGudang} riwayatHarga={riwayatHargaGudang}
+              namaKategori={namaKategori} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
 
@@ -1434,7 +1508,7 @@ export default function InventoryApp() {
       )}
 
       {modalNotifikasi && (
-        <ModalNotifikasi stokMenipis={stokMenipis} settings={settings} onTutup={() => setModalNotifikasi(false)} />
+        <ModalNotifikasi stokMenipis={stokMenipis} settings={settings} currentUser={currentUser} onTutup={() => setModalNotifikasi(false)} />
       )}
       {modalSetting && (
         <ModalSetting settings={settings} onUpdate={simpanSettings} onTutup={() => setModalSetting(false)} onResetData={resetSemuaData} isAdmin={isAdmin} />
@@ -1454,7 +1528,7 @@ function ModalSetting({ settings, onUpdate, onTutup, onResetData, isAdmin }) {
       <h3 style={{ marginTop: 0, fontFamily: "'Space Grotesk', sans-serif", display: "flex", alignItems: "center", gap: 8 }}>
         <Settings size={18} color="#3FA796" /> Pengaturan Aplikasi
       </h3>
-      <p style={{ color: "#8B95A1", fontSize: 12, marginTop: -8 }}>Pilih tema, nomor WhatsApp, dan pengingat stok minim otomatis.</p>
+      <p style={{ color: "#8B95A1", fontSize: 12, marginTop: -8 }}>Pilih tema aplikasi dan kelola kontak notifikasi stok minim.</p>
 
       <Grid>
         <Field label="Tema Aplikasi">
@@ -1463,19 +1537,32 @@ function ModalSetting({ settings, onUpdate, onTutup, onResetData, isAdmin }) {
             <option value="light">Terang</option>
           </select>
         </Field>
-        <Field label="Nomor WhatsApp tujuan">
-          <input value={local.waNumber} onChange={e => setLocal(s => ({ ...s, waNumber: e.target.value }))} placeholder="62812xxxxxxx" style={inputStyle} />
-        </Field>
-        <Field label="Jadwal Notifikasi Stok Minim">
-          <input type="time" value={local.notifSchedule} onChange={e => setLocal(s => ({ ...s, notifSchedule: e.target.value }))} style={inputStyle} />
-        </Field>
-        <Field label="Kirim Notifikasi Otomatis">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <input type="checkbox" checked={local.autoNotify} onChange={e => setLocal(s => ({ ...s, autoNotify: e.target.checked }))} />
-            <span style={{ color: "#EDEFF2", fontSize: 13 }}>Aktifkan pengiriman otomatis WA</span>
-          </div>
-        </Field>
       </Grid>
+
+      {isAdmin && (
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #2A3138" }}>
+          <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Kontak Notifikasi Stok Minim per Gudang</h4>
+          <p style={{ fontSize: 12, color: "#8B95A1", marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
+            Tiap gudang punya nomor WhatsApp & email sendiri. Saat akun gudang itu login dan ada stok menipis, tombol kirim di halaman Notifikasi akan memakai kontak ini.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {GUDANG.map(g => {
+              const kontak = (local.kontakGudang || {})[g] || { whatsapp: "", email: "" };
+              return (
+                <div key={g} style={{ background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>{g}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                    <input value={kontak.whatsapp} onChange={e => setLocal(s => ({ ...s, kontakGudang: { ...(s.kontakGudang || {}), [g]: { ...kontak, whatsapp: e.target.value } } }))}
+                      placeholder="62812xxxxxxx" style={inputStyle} />
+                    <input value={kontak.email} onChange={e => setLocal(s => ({ ...s, kontakGudang: { ...(s.kontakGudang || {}), [g]: { ...kontak, email: e.target.value } } }))}
+                      placeholder="email@contoh.com" style={inputStyle} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #2A3138" }}>
@@ -1706,17 +1793,69 @@ function LoginView({ onLogin, onKembali }) {
 }
 
 // ============================================================
-function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapatan, totalProfit, totalTransaksi, mutasiHariIni, trenHarian, produkTerlaris, distribusiKategori, warnaKategoriMap, bisaLihatHarga = true }) {
+function DashboardView({ products, sales, mutasi, riwayatHarga, namaKategori, warnaKategoriMap, bisaLihatHarga = true }) {
+  const [filterKategori, setFilterKategori] = useState("Semua");
+
+  const produkF = useMemo(() => filterKategori === "Semua" ? products : products.filter(p => p.kategori === filterKategori), [products, filterKategori]);
+  const salesF = useMemo(() => filterKategori === "Semua" ? sales : sales.filter(s => s.kategori === filterKategori), [sales, filterKategori]);
+  const mutasiF = useMemo(() => filterKategori === "Semua" ? mutasi : mutasi.filter(m => (m.kategori || "") === filterKategori), [mutasi, filterKategori]);
+
+  const idProdukF = useMemo(() => new Set(produkF.map(p => p.id)), [produkF]);
+  const riwayatF = useMemo(() => riwayatHarga.filter(r => idProdukF.has(r.produkId)), [riwayatHarga, idProdukF]);
+
+  const nilaiTotalStok = useMemo(() => produkF.reduce((s, p) => s + p.stok * p.hargaBeli, 0), [produkF]);
+  const stokMenipis = useMemo(() => produkF.filter(p => p.stok <= p.stokMin), [produkF]);
+  const totalPendapatan = useMemo(() => salesF.reduce((s, x) => s + x.total, 0), [salesF]);
+  const totalProfit = useMemo(() => salesF.reduce((s, x) => s + x.profit, 0), [salesF]);
+  const totalTransaksi = salesF.length;
+  const mutasiHariIni = useMemo(() => {
+    const hariIni = new Date().toISOString().slice(0, 10);
+    return mutasiF.filter(m => m.tanggal.slice(0, 10) === hariIni).length;
+  }, [mutasiF]);
+
+  const trenHarian = useMemo(() => {
+    const peta = {};
+    salesF.forEach(s => {
+      const k = s.tanggal.slice(0, 10);
+      if (!peta[k]) peta[k] = { tanggal: k, pendapatan: 0, profit: 0 };
+      peta[k].pendapatan += s.total; peta[k].profit += s.profit;
+    });
+    return Object.values(peta).sort((a, b) => a.tanggal.localeCompare(b.tanggal))
+      .map(d => ({ ...d, label: tanggalID(d.tanggal).replace(/ \d{4}/, "") }));
+  }, [salesF]);
+
+  const produkTerlaris = useMemo(() => {
+    const peta = {};
+    salesF.forEach(s => { peta[s.namaProduk] = (peta[s.namaProduk] || 0) + s.jumlah; });
+    return Object.entries(peta).map(([nama, jumlah]) => ({ nama, jumlah })).sort((a, b) => b.jumlah - a.jumlah).slice(0, 6);
+  }, [salesF]);
+
+  const distribusiKategori = useMemo(() => {
+    const peta = {};
+    produkF.forEach(p => { peta[p.kategori] = (peta[p.kategori] || 0) + p.stok * p.hargaBeli; });
+    return Object.entries(peta).map(([kategori, nilai]) => ({ kategori, nilai }));
+  }, [produkF]);
+
   return (
     <div>
-      <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        Dashboard Operasional <Sparkles size={16} color="#3FA796" />
-      </h1>
-      <p style={{ color: "#8B95A1", marginTop: 4 }}>Ringkasan performa gudang dan penjualan 30 hari terakhir.</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            Dashboard Operasional <Sparkles size={16} color="#3FA796" />
+          </h1>
+          <p style={{ color: "#8B95A1", marginTop: 4 }}>Ringkasan performa gudang dan penjualan 30 hari terakhir.</p>
+        </div>
+        <div className="no-print">
+          <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={inputStyle}>
+            <option value="Semua">Semua Kategori</option>
+            {namaKategori.map(k => <option key={k}>{k}</option>)}
+          </select>
+        </div>
+      </div>
       <BarcodeDivider />
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-        {bisaLihatHarga && <KartuKPI ikon={Wallet} label="Nilai Stok" nilai={nilaiTotalStok} formatFn={rupiah} sub={`${totalItems} jenis produk`} warna="#3FA796" />}
+        {bisaLihatHarga && <KartuKPI ikon={Wallet} label="Nilai Stok" nilai={nilaiTotalStok} formatFn={rupiah} sub={`${produkF.length} jenis produk`} warna="#3FA796" />}
         <KartuKPI ikon={AlertTriangle} label="Stok Menipis" nilai={stokMenipis.length} sub="perlu restock segera" warna="#E8A33D" />
         {bisaLihatHarga && <KartuKPI ikon={TrendingUp} label="Pendapatan" nilai={totalPendapatan} formatFn={rupiah} sub="30 hari terakhir" warna="#3FA796" />}
         {bisaLihatHarga && <KartuKPI ikon={ShoppingCart} label="Profit Kotor" nilai={totalProfit} formatFn={rupiah} sub={`${totalTransaksi} transaksi`} warna="#F2C14E" />}
@@ -1760,6 +1899,8 @@ function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapata
         </div>
       )}
 
+      {bisaLihatHarga && <GrafikPergerakanHarga produk={produkF} riwayat={riwayatF} namaKategori={namaKategori} />}
+
       <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 320, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
           <h3 style={judulKartu}>Produk Terlaris</h3>
@@ -1779,7 +1920,7 @@ function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapata
           {stokMenipis.length === 0 ? (
             <p style={{ color: "#8B95A1", fontSize: 13 }}>Tidak ada produk dengan stok kritis saat ini.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 220, overflowY: "auto" }}>
               {stokMenipis.map(p => (
                 <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                   <div>
@@ -1791,6 +1932,143 @@ function DashboardView({ nilaiTotalStok, totalItems, stokMenipis, totalPendapata
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Grafik Pergerakan Harga: menampilkan tren naik-turun harga produk yang baru
+// saja berubah, plus tabel lengkap seluruh riwayat harga (semua jenis barang)
+// yang bisa digulir dan difilter per kolom.
+function GrafikPergerakanHarga({ produk, riwayat, namaKategori }) {
+  const urutTerbaru = useMemo(() => [...riwayat].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal)), [riwayat]);
+  const produkAktifDefault = urutTerbaru[0]?.produkId || produk[0]?.id || "";
+  const [produkAktifId, setProdukAktifId] = useState(produkAktifDefault);
+  useEffect(() => {
+    if (!riwayat.some(r => r.produkId === produkAktifId) && urutTerbaru[0]) setProdukAktifId(urutTerbaru[0].produkId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urutTerbaru]);
+
+  const [filterNama, setFilterNama] = useState("");
+  const [filterField, setFilterField] = useState("Semua");
+  const [filterKategoriTabel, setFilterKategoriTabel] = useState("Semua");
+  const [tanggalMulai, setTanggalMulai] = useState("");
+  const [tanggalSelesai, setTanggalSelesai] = useState("");
+
+  const petaKategoriProduk = useMemo(() => Object.fromEntries(produk.map(p => [p.id, p.kategori])), [produk]);
+
+  const dataGrafikAktif = useMemo(() => {
+    return riwayat.filter(r => r.produkId === produkAktifId)
+      .sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal))
+      .map(r => ({ tanggal: tanggalID(r.tanggal).replace(/ \d{4}/, ""), harga: r.hargaBaru, field: r.field }));
+  }, [riwayat, produkAktifId]);
+
+  const produkAktif = produk.find(p => p.id === produkAktifId);
+  const perubahanTerakhir = urutTerbaru.find(r => r.produkId === produkAktifId);
+
+  const tabelTersaring = useMemo(() => riwayat.filter(r => {
+    if (filterNama && !r.namaProduk.toLowerCase().includes(filterNama.toLowerCase())) return false;
+    if (filterField !== "Semua" && r.field !== filterField) return false;
+    if (filterKategoriTabel !== "Semua" && (petaKategoriProduk[r.produkId] || "") !== filterKategoriTabel) return false;
+    if (tanggalMulai && r.tanggal < `${tanggalMulai}T00:00:00.000Z`) return false;
+    if (tanggalSelesai && r.tanggal > `${tanggalSelesai}T23:59:59.999Z`) return false;
+    return true;
+  }).sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal)), [riwayat, filterNama, filterField, filterKategoriTabel, tanggalMulai, tanggalSelesai, petaKategoriProduk]);
+
+  if (riwayat.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h3 style={{ ...judulKartu, marginBottom: 4 }}>Grafik Pergerakan Harga</h3>
+          <p style={{ fontSize: 11, color: "#5C6570", margin: 0 }}>Menampilkan tren harga produk dengan perubahan paling baru -- otomatis mengikuti setiap ada perubahan harga.</p>
+        </div>
+        <select value={produkAktifId} onChange={e => setProdukAktifId(e.target.value)} style={{ ...inputStyle, minWidth: 200 }}>
+          {[...new Set(riwayat.map(r => r.produkId))].map(pid => {
+            const p = produk.find(x => x.id === pid);
+            const rTerbaru = riwayat.find(r => r.produkId === pid);
+            return <option key={pid} value={pid}>{p?.nama || rTerbaru?.namaProduk || "Produk"}</option>;
+          })}
+        </select>
+      </div>
+
+      {produkAktif && perubahanTerakhir && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12.5 }}>
+          <span style={{ color: "#8B95A1" }}>{produkAktif.nama} · {perubahanTerakhir.field}:</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#5C6570" }}>{rupiah(perubahanTerakhir.hargaLama)}</span>
+          <span style={{ color: "#5C6570" }}>→</span>
+          <span style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700,
+            color: perubahanTerakhir.hargaBaru > perubahanTerakhir.hargaLama ? "#E2574C" : perubahanTerakhir.hargaBaru < perubahanTerakhir.hargaLama ? "#3FA796" : "#8B95A1",
+          }}>{rupiah(perubahanTerakhir.hargaBaru)}</span>
+          {perubahanTerakhir.hargaBaru > perubahanTerakhir.hargaLama
+            ? <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "#E2574C", fontSize: 11, fontWeight: 700 }}><TrendingUp size={12} /> naik</span>
+            : perubahanTerakhir.hargaBaru < perubahanTerakhir.hargaLama
+              ? <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "#3FA796", fontSize: 11, fontWeight: 700 }}><TrendingDown size={12} /> turun</span>
+              : null}
+        </div>
+      )}
+
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={dataGrafikAktif} margin={{ top: 16 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#2A3138" />
+          <XAxis dataKey="tanggal" stroke="#5C6570" fontSize={11} />
+          <YAxis stroke="#5C6570" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}rb`} />
+          <Tooltip contentStyle={tooltipStyle} formatter={(v) => rupiah(v)} />
+          <Line type="monotone" dataKey="harga" stroke="#F2C14E" strokeWidth={2} dot={{ r: 3 }} name="Harga" />
+        </LineChart>
+      </ResponsiveContainer>
+
+      <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid #2A3138" }}>
+        <div style={{ fontSize: 11, color: "#5C6570", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Seluruh riwayat harga -- semua jenis barang</div>
+        <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          <input value={filterNama} onChange={e => setFilterNama(e.target.value)} placeholder="Cari nama produk..." style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+          <select value={filterField} onChange={e => setFilterField(e.target.value)} style={inputStyle}>
+            <option value="Semua">Semua Field</option>
+            <option value="Harga Beli">Harga Beli</option>
+            <option value="Harga Jual">Harga Jual</option>
+          </select>
+          <select value={filterKategoriTabel} onChange={e => setFilterKategoriTabel(e.target.value)} style={inputStyle}>
+            <option value="Semua">Semua Kategori</option>
+            {namaKategori.map(k => <option key={k}>{k}</option>)}
+          </select>
+          <input type="date" value={tanggalMulai} onChange={e => setTanggalMulai(e.target.value)} style={{ ...inputStyle, minWidth: 140 }} />
+          <input type="date" value={tanggalSelesai} onChange={e => setTanggalSelesai(e.target.value)} style={{ ...inputStyle, minWidth: 140 }} />
+        </div>
+        <div style={{ border: "1px solid #2A3138", borderRadius: 8, overflow: "hidden", overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
+          <table>
+            <thead>
+              <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 11, textTransform: "uppercase", position: "sticky", top: 0 }}>
+                <th>Tanggal</th><th>Produk</th><th>Kategori</th><th>Field</th><th>Harga Lama</th><th>Harga Baru</th><th>Perubahan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tabelTersaring.map(r => {
+                const naik = r.hargaBaru > r.hargaLama;
+                const turun = r.hargaBaru < r.hargaLama;
+                const persen = r.hargaLama > 0 ? Math.round(((r.hargaBaru - r.hargaLama) / r.hargaLama) * 100) : 0;
+                return (
+                  <tr key={r.id} style={{ borderTop: "1px solid #2A3138", fontSize: 12.5 }}>
+                    <td style={{ color: "#8B95A1" }}>{tanggalID(r.tanggal)}</td>
+                    <td>{r.namaProduk}</td>
+                    <td style={{ color: "#8B95A1" }}>{petaKategoriProduk[r.produkId] || "-"}</td>
+                    <td style={{ color: "#8B95A1" }}>{r.field}</td>
+                    <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(r.hargaLama)}</td>
+                    <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(r.hargaBaru)}</td>
+                    <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: naik ? "#E2574C" : turun ? "#3FA796" : "#8B95A1" }}>
+                      {naik && <TrendingUp size={11} style={{ verticalAlign: -1, marginRight: 3 }} />}
+                      {turun && <TrendingDown size={11} style={{ verticalAlign: -1, marginRight: 3 }} />}
+                      {persen > 0 ? `+${persen}` : persen}%
+                    </td>
+                  </tr>
+                );
+              })}
+              {tabelTersaring.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: "#5C6570" }}>Tidak ada riwayat harga yang cocok dengan filter.</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1840,7 +2118,8 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
           )}
         </div>
       </div>
-      <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14, marginBottom: 16 }}>
+      <div className="no-print" style={{ marginTop: 14, marginBottom: 16, background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: 12 }}>
+        <div style={{ fontSize: 11, color: "#5C6570", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Filter khusus untuk file ekspor (tidak mengubah tabel di bawah)</div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: "#8B95A1", display: "flex", flexDirection: "column", gap: 6 }}>
             Dari tanggal
@@ -1870,15 +2149,18 @@ function InventoryView({ produk, search, setSearch, namaKategori, warnaKategoriM
       </div>
       <BarcodeDivider />
 
-      <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 8, padding: "8px 12px", flex: 1, maxWidth: 320 }}>
-          <Search size={15} color="#5C6570" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari nama atau kode barang..." style={{ background: "transparent", border: "none", outline: "none", color: "#EDEFF2", width: "100%" }} />
+      <div className="no-print" style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "#5C6570", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Filter tabel di bawah ini</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#1D2329", border: "1px solid #2A3138", borderRadius: 8, padding: "8px 12px", flex: 1, maxWidth: 320 }}>
+            <Search size={15} color="#5C6570" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari nama atau kode barang..." style={{ background: "transparent", border: "none", outline: "none", color: "#EDEFF2", width: "100%" }} />
+          </div>
+          <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={inputStyle}>
+            <option>Semua</option>
+            {namaKategori.map(k => <option key={k}>{k}</option>)}
+          </select>
         </div>
-        <select value={filterKategori} onChange={e => setFilterKategori(e.target.value)} style={inputStyle}>
-          <option>Semua</option>
-          {namaKategori.map(k => <option key={k}>{k}</option>)}
-        </select>
       </div>
 
       <div style={{ background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, overflow: "hidden", overflowX: "auto" }}>
@@ -2590,11 +2872,20 @@ function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories
     satuan: SATUAN_GROUPS[0].opsi[0], stok: 0, stokMin: 10, hargaBeli: 0, hargaJual: 0, supplier: ""
   });
   const [saranTerbuka, setSaranTerbuka] = useState(false);
+  const [hargaJualDiubahManual, setHargaJualDiubahManual] = useState(false);
 
   const set = (field) => (e) => {
     const v = e.target.value;
     const numFields = ["stok", "stokMin", "hargaBeli", "hargaJual"];
-    setForm(prev => ({ ...prev, [field]: numFields.includes(field) ? Number(v) : v }));
+    const nilai = numFields.includes(field) ? Number(v) : v;
+    if (field === "hargaJual") setHargaJualDiubahManual(true);
+    setForm(prev => {
+      const baru = { ...prev, [field]: nilai };
+      // Produk baru: samakan Harga Jual dengan Harga Beli begitu diketik, supaya tinggal
+      // diedit (bukan diketik ulang dari nol) -- kecuali Harga Jual sudah pernah diubah manual.
+      if (field === "hargaBeli" && !data && !hargaJualDiubahManual) baru.hargaJual = nilai;
+      return baru;
+    });
   };
 
   const kodePreview = useMemo(() => {
@@ -2624,6 +2915,7 @@ function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories
       ...prev, nama: p.nama, kategori: p.kategori, satuan: p.satuan,
       stokMin: p.stokMin, hargaBeli: p.hargaBeli, hargaJual: p.hargaJual, supplier: p.supplier,
     }));
+    setHargaJualDiubahManual(true);
     setSaranTerbuka(false);
   }
 
@@ -3221,9 +3513,10 @@ function ModalEditJual({ sale, products, onBatal, onSimpan }) {
   );
 }
 
-function ModalNotifikasi({ stokMenipis, onTutup }) {
-  const [nomorWA, setNomorWA] = useState("");
-  const [email, setEmail] = useState("");
+function ModalNotifikasi({ stokMenipis, onTutup, currentUser, settings }) {
+  const kontakSaya = (settings?.kontakGudang || {})[currentUser?.gudang] || {};
+  const [nomorWA, setNomorWA] = useState(kontakSaya.whatsapp || "");
+  const [email, setEmail] = useState(kontakSaya.email || "");
   const [sudahUnduh, setSudahUnduh] = useState(false);
 
   function ringkasanTeks() {
@@ -3281,6 +3574,9 @@ function ModalNotifikasi({ stokMenipis, onTutup }) {
               <input value={email} onChange={e => setEmail(e.target.value)} placeholder="nama@perusahaan.com" style={inputStyle} />
             </Field>
           </Grid>
+          {!kontakSaya.whatsapp && !kontakSaya.email && (
+            <p style={{ fontSize: 11, color: "#E8A33D", marginTop: 6 }}>Kontak untuk {currentUser?.gudang} belum diatur admin di menu Pengaturan -- silakan isi manual di atas untuk sekarang.</p>
+          )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
             <button onClick={kirimWhatsApp} style={{ ...btnSecondary, flex: 1, display: "flex", alignItems: "center", gap: 6, justifyContent: "center", color: "#3FA796" }}>
