@@ -962,6 +962,84 @@ export default function InventoryApp() {
     setModalProduk(null);
   }
 
+  // Simpan beberapa produk BARU sekaligus (fitur "Tambah Item" di form Tambah Produk).
+  // Semua item divalidasi dulu; kalau ada satu yang gagal, tidak ada yang disimpan sama sekali.
+  function simpanProdukBanyak(daftarItem) {
+    for (let i = 0; i < daftarItem.length; i++) {
+      const d = daftarItem[i];
+      if (!d.nama.trim() || !d.kategori) return `Item ${i + 1}: nama dan kategori wajib diisi.`;
+      if (!d.satuan) return `Item ${i + 1}: satuan wajib dipilih.`;
+      if (bisaLihatHarga && d.hargaJual < d.hargaBeli) return `Item ${i + 1} (${d.nama}): harga jual minimal harus sama dengan harga beli.`;
+      if (d.stok < 0 || d.stokMin < 0) return `Item ${i + 1} (${d.nama}): stok tidak boleh negatif.`;
+    }
+
+    const counterMap = {};
+    categories.forEach(c => { counterMap[c.id] = c.counter || 0; });
+    const kodeTerpakai = {};
+    products.forEach(p => { if (!(p.nama.toLowerCase() in kodeTerpakai)) kodeTerpakai[p.nama.toLowerCase()] = p.kodeBarang; });
+
+    let nomorMutasiBerjalan = nextMutasiNo;
+    const tgl = new Date();
+    const ymd = `${tgl.getFullYear()}${pad(tgl.getMonth() + 1, 2)}${pad(tgl.getDate(), 2)}`;
+    const createdAt = tgl.toISOString();
+
+    const produkBaruSemua = [];
+    const riwayatBaruSemua = [];
+    const mutasiBaruSemua = [];
+
+    daftarItem.forEach(data => {
+      const namaLower = data.nama.trim().toLowerCase();
+      let kodeBarang = kodeTerpakai[namaLower];
+      if (!kodeBarang) {
+        const kat = categories.find(c => c.nama === data.kategori);
+        const nomorUrut = (counterMap[kat?.id] || 0) + 1;
+        if (kat) counterMap[kat.id] = nomorUrut;
+        kodeBarang = `${kat?.prefix || "GEN"}-${pad(nomorUrut, 3)}`;
+        kodeTerpakai[namaLower] = kodeBarang;
+      }
+      const idBaru = uid();
+      produkBaruSemua.push({ ...data, id: idBaru, kodeBarang, createdAt });
+
+      if (data.hargaBeli > 0) riwayatBaruSemua.push({ id: uid(), produkId: idBaru, namaProduk: data.nama, kodeBarang, field: "Harga Beli", hargaLama: 0, hargaBaru: data.hargaBeli, tanggal: createdAt });
+      if (data.hargaJual > 0) riwayatBaruSemua.push({ id: uid(), produkId: idBaru, namaProduk: data.nama, kodeBarang, field: "Harga Jual", hargaLama: 0, hargaBaru: data.hargaJual, tanggal: createdAt });
+
+      if (data.stok > 0) {
+        const kodeMutasi = `MUT-${ymd}-${pad(nomorMutasiBerjalan, 4)}`;
+        nomorMutasiBerjalan += 1;
+        mutasiBaruSemua.push({
+          id: uid(), kode: kodeMutasi, jenis: "Masuk", produkId: idBaru, namaProduk: data.nama, kodeBarang,
+          kategori: data.kategori, gudang: data.gudang, jumlah: data.stok, satuan: data.satuan,
+          keterangan: "Stok awal produk baru", oleh: currentUser.nama,
+          stokSebelum: 0, stokSesudah: data.stok, tanggal: createdAt, hargaSatuan: data.hargaBeli,
+        });
+      }
+    });
+
+    setProducts(prev => [...prev, ...produkBaruSemua]);
+    simpanBanyakKeSupabase("products", produkBaruSemua);
+
+    const kategoriUpdate = categories.filter(c => counterMap[c.id] !== c.counter).map(c => ({ ...c, counter: counterMap[c.id] }));
+    if (kategoriUpdate.length) {
+      setCategories(prev => prev.map(c => kategoriUpdate.find(k => k.id === c.id) || c));
+      simpanBanyakKeSupabase("categories", kategoriUpdate);
+    }
+    if (riwayatBaruSemua.length) {
+      setRiwayatHarga(prev => [...riwayatBaruSemua, ...prev]);
+      simpanBanyakKeSupabase("riwayat_harga", riwayatBaruSemua);
+    }
+    if (mutasiBaruSemua.length) {
+      setMutasi(prev => [...mutasiBaruSemua, ...prev]);
+      simpanBanyakKeSupabase("mutasi", mutasiBaruSemua);
+      setNextMutasiNo(nomorMutasiBerjalan);
+      simpanCounterKeSupabase(nomorMutasiBerjalan);
+    }
+
+    pushToast("success", `${produkBaruSemua.length} produk baru berhasil ditambahkan sekaligus.`);
+    setErrorForm("");
+    setModalProduk(null);
+    return null;
+  }
+
   function hapusProduk(id) {
     const p = products.find(x => x.id === id);
     setProducts(prev => prev.filter(p => p.id !== id));
@@ -1026,6 +1104,81 @@ export default function InventoryApp() {
     setNextMutasiNo(nomorMutasiBaru);
     simpanCounterKeSupabase(nomorMutasiBaru);
     pushToast("success", `Penjualan ${p.nama} sebanyak ${jumlah} ${satuanSingkat(p.satuan)} dicatat dan disinkronkan dengan mutasi.`);
+    return null;
+  }
+
+  // Catat beberapa item Penjualan/Barang Keluar sekaligus (fitur "Tambah Item" di ModalJual).
+  // Transfer tidak didukung batch di sini -- tetap satu per satu lewat catatMutasi.
+  function catatPenjualanBanyak(daftarItem, tanggal, transactionType = "Penjualan") {
+    const stokBerjalan = {};
+    for (let i = 0; i < daftarItem.length; i++) {
+      const it = daftarItem[i];
+      const p = products.find(x => x.id === it.produkId);
+      if (!p) return `Item ${i + 1}: produk tidak ditemukan.`;
+      if (it.jumlah <= 0) return `Item ${i + 1} (${p.nama}): jumlah harus lebih dari 0.`;
+      if (!(it.produkId in stokBerjalan)) stokBerjalan[it.produkId] = p.stok;
+      stokBerjalan[it.produkId] -= it.jumlah;
+      if (transactionType === "Keluar" && stokBerjalan[it.produkId] < 0) {
+        return `Item ${i + 1} (${p.nama}): stok tidak mencukupi untuk total ${it.jumlah} ${satuanSingkat(p.satuan)} di batch ini.`;
+      }
+    }
+
+    let nomorMutasiBerjalan = nextMutasiNo;
+    const tanggalIso = new Date(tanggal).toISOString();
+    const ymd = `${tanggalIso.slice(0, 4)}${tanggalIso.slice(5, 7)}${tanggalIso.slice(8, 10)}`;
+    const produkUpdateMap = {};
+    const riwayatBaruSemua = [];
+    const salesBaruSemua = [];
+    const mutasiBaruSemua = [];
+
+    daftarItem.forEach(it => {
+      const p = produkUpdateMap[it.produkId] || products.find(x => x.id === it.produkId);
+      const hargaJualFinal = it.hargaJualOverride > 0 ? it.hargaJualOverride : p.hargaJual;
+      const defaultKeterangan = it.keterangan || (transactionType === "Keluar" ? "Barang Keluar" : "Penjualan");
+      const saleId = uid();
+      const mutasiId = uid();
+      const kode = `MUT-${ymd}-${pad(nomorMutasiBerjalan, 4)}`;
+      nomorMutasiBerjalan += 1;
+
+      if (hargaJualFinal !== p.hargaJual) {
+        riwayatBaruSemua.push({ id: uid(), produkId: p.id, namaProduk: p.nama, kodeBarang: p.kodeBarang, field: "Harga Jual", hargaLama: p.hargaJual, hargaBaru: hargaJualFinal, tanggal: tanggalIso });
+      }
+
+      const produkDiperbarui = { ...p, stok: p.stok - it.jumlah, hargaJual: hargaJualFinal };
+      produkUpdateMap[it.produkId] = produkDiperbarui;
+
+      if (transactionType === "Keluar") {
+        mutasiBaruSemua.push({
+          id: mutasiId, kode, jenis: "Keluar", produkId: it.produkId, namaProduk: p.nama, kodeBarang: p.kodeBarang,
+          kategori: p.kategori, gudang: p.gudang, jumlah: it.jumlah, satuan: p.satuan, keterangan: defaultKeterangan,
+          oleh: currentUser.nama, stokSebelum: p.stok, stokSesudah: p.stok - it.jumlah, tanggal: tanggalIso,
+        });
+      } else {
+        salesBaruSemua.push({
+          id: saleId, produkId: it.produkId, namaProduk: p.nama, kodeBarang: p.kodeBarang, kategori: p.kategori, gudang: p.gudang,
+          jumlah: it.jumlah, hargaJualSaat: hargaJualFinal, hargaBeliSaat: p.hargaBeli,
+          total: it.jumlah * hargaJualFinal, profit: it.jumlah * (hargaJualFinal - p.hargaBeli), tanggal: tanggalIso,
+          keterangan: defaultKeterangan, mutasiId,
+        });
+        mutasiBaruSemua.push({
+          id: mutasiId, kode, jenis: "Keluar", produkId: it.produkId, namaProduk: p.nama, kodeBarang: p.kodeBarang,
+          kategori: p.kategori, gudang: p.gudang, jumlah: it.jumlah, satuan: p.satuan, keterangan: defaultKeterangan,
+          oleh: currentUser.nama, stokSebelum: p.stok, stokSesudah: p.stok - it.jumlah, tanggal: tanggalIso, saleId,
+        });
+      }
+    });
+
+    const produkUpdateSemua = Object.values(produkUpdateMap);
+    setProducts(prev => prev.map(x => produkUpdateMap[x.id] || x));
+    simpanBanyakKeSupabase("products", produkUpdateSemua);
+    if (riwayatBaruSemua.length) { setRiwayatHarga(prev => [...riwayatBaruSemua, ...prev]); simpanBanyakKeSupabase("riwayat_harga", riwayatBaruSemua); }
+    if (salesBaruSemua.length) { setSales(prev => [...salesBaruSemua, ...prev]); simpanBanyakKeSupabase("sales", salesBaruSemua); }
+    setMutasi(prev => [...mutasiBaruSemua, ...prev]);
+    simpanBanyakKeSupabase("mutasi", mutasiBaruSemua);
+    setNextMutasiNo(nomorMutasiBerjalan);
+    simpanCounterKeSupabase(nomorMutasiBerjalan);
+
+    pushToast("success", `${daftarItem.length} item ${transactionType === "Keluar" ? "barang keluar" : "penjualan"} berhasil dicatat sekaligus.`);
     return null;
   }
 
@@ -1476,7 +1629,7 @@ export default function InventoryApp() {
 
       {modalProduk && (
         <ModalProduk data={modalProduk === "baru" ? null : modalProduk} error={errorForm} categories={categories} products={products} bisaLihatHarga={bisaLihatHarga}
-          onBatal={() => setModalProduk(null)} onSimpan={simpanProduk} defaultGudang={isAdmin ? GUDANG[0] : currentUser.gudang} />
+          onBatal={() => setModalProduk(null)} onSimpan={simpanProduk} onSimpanBanyak={simpanProdukBanyak} defaultGudang={isAdmin ? GUDANG[0] : currentUser.gudang} />
       )}
 
       {modalKategori && (
@@ -1486,7 +1639,8 @@ export default function InventoryApp() {
 
       {modalJual && (
         <ModalJual products={productsGudang.length ? productsGudang : products} onBatal={() => setModalJual(false)} bisaLihatHarga={bisaLihatHarga}
-          onSimpan={(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang) => { const err = catatPenjualan(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang); if (!err) setModalJual(false); return err; }} />
+          onSimpan={(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang) => { const err = catatPenjualan(produkId, jumlah, tanggal, hargaJualOverride, keterangan, transactionType, tujuanGudang); if (!err) setModalJual(false); return err; }}
+          onSimpanBanyak={(daftarItem, tanggal, transactionType) => { const err = catatPenjualanBanyak(daftarItem, tanggal, transactionType); if (!err) setModalJual(false); return err; }} />
       )}
 
       {modalEditJual && (
@@ -2866,13 +3020,28 @@ function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEn
 }
 
 // ============================================================
-function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories, products = [], bisaLihatHarga = true }) {
-  const [form, setForm] = useState(data || {
+function ModalProduk({ data, error, onBatal, onSimpan, onSimpanBanyak, defaultGudang, categories, products = [], bisaLihatHarga = true }) {
+  const kosong = () => ({
     id: null, kodeBarang: "", nama: "", kategori: categories[0]?.nama || "", gudang: defaultGudang,
     satuan: SATUAN_GROUPS[0].opsi[0], stok: 0, stokMin: 10, hargaBeli: 0, hargaJual: 0, supplier: ""
   });
+  const [form, setForm] = useState(data || kosong());
+  const [antrian, setAntrian] = useState([]);
   const [saranTerbuka, setSaranTerbuka] = useState(false);
   const [hargaJualDiubahManual, setHargaJualDiubahManual] = useState(false);
+  const [errorLokal, setErrorLokal] = useState("");
+
+  function tambahKeAntrian() {
+    if (!form.nama.trim()) { setErrorLokal("Isi dulu nama produknya sebelum menambah item baru."); return; }
+    setAntrian(prev => [...prev, form]);
+    setForm(prev => ({ ...kosong(), gudang: prev.gudang, kategori: prev.kategori, satuan: prev.satuan }));
+    setHargaJualDiubahManual(false);
+    setErrorLokal("");
+  }
+
+  function hapusDariAntrian(idx) {
+    setAntrian(prev => prev.filter((_, i) => i !== idx));
+  }
 
   const set = (field) => (e) => {
     const v = e.target.value;
@@ -3011,11 +3180,36 @@ function ModalProduk({ data, error, onBatal, onSimpan, defaultGudang, categories
         )}
       </Grid>
 
-      {error && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error}</div>}
+      {!data && antrian.length > 0 && (
+        <div style={{ marginTop: 14, background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: 10 }}>
+          <div style={{ fontSize: 11, color: "#8B95A1", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>{antrian.length} item siap disimpan</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {antrian.map((it, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1D2329", borderRadius: 6, padding: "6px 10px", fontSize: 12.5 }}>
+                <span><b>{it.nama}</b> <span style={{ color: "#8B95A1" }}>• {it.kategori} • {it.gudang} • {it.stok} {satuanSingkat(it.satuan)}</span></span>
+                <button type="button" onClick={() => hapusDariAntrian(idx)} className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(error || errorLokal) && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error || errorLokal}</div>}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onBatal} style={btnSecondary}>Batal</button>
-        <button onClick={() => onSimpan(form)} className="btn-primary-glow" style={btnPrimary}>Simpan</button>
+        {!data && (
+          <button onClick={tambahKeAntrian} style={{ ...btnSecondary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Tambah Item</button>
+        )}
+        <button onClick={() => {
+          if (data) { onSimpan(form); return; }
+          const daftarAkhir = form.nama.trim() ? [...antrian, form] : antrian;
+          if (daftarAkhir.length === 0) { setErrorLokal("Isi minimal satu produk sebelum menyimpan."); return; }
+          const err = onSimpanBanyak(daftarAkhir);
+          if (err) setErrorLokal(err);
+        }} className="btn-primary-glow" style={btnPrimary}>
+          {data ? "Simpan" : `Simpan${antrian.length > 0 ? ` Semua (${form.nama.trim() ? antrian.length + 1 : antrian.length})` : ""}`}
+        </button>
       </div>
     </Overlay>
   );
@@ -3303,7 +3497,7 @@ function ModalInvoiceMutasi({ record, onTutup, onCetak }) {
   );
 }
 
-function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
+function ModalJual({ products, onBatal, onSimpan, onSimpanBanyak, bisaLihatHarga = true }) {
   const [produkId, setProdukId] = useState(products[0]?.id || "");
   const [productSearch, setProductSearch] = useState(`${products[0]?.nama} (${products[0]?.kodeBarang})`);
   const [transactionType, setTransactionType] = useState("Penjualan");
@@ -3313,9 +3507,11 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
   const [hargaJualOverride, setHargaJualOverride] = useState(products[0]?.hargaJual > 0 ? String(products[0].hargaJual) : "");
   const [hargaDiubahManual, setHargaDiubahManual] = useState(false);
   const [keterangan, setKeterangan] = useState("");
+  const [antrian, setAntrian] = useState([]);
   const [error, setError] = useState("");
   const filteredProducts = products.filter(p => p.nama.toLowerCase().includes(productSearch.toLowerCase()) || p.kodeBarang.toLowerCase().includes(productSearch.toLowerCase()));
   const produkDipilih = products.find(p => p.id === produkId);
+  const bisaAntri = transactionType !== "Transfer";
 
   // Isi otomatis Harga Jual dari harga default produk saat dipilih -- tetap bisa diedit manual.
   useEffect(() => {
@@ -3324,6 +3520,23 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produkId]);
+
+  function itemSaatIni() {
+    if (!produkId || !jumlah || Number(jumlah) <= 0) return null;
+    return { produkId, nama: produkDipilih?.nama, kodeBarang: produkDipilih?.kodeBarang, jumlah: Number(jumlah), hargaJualOverride: Number(hargaJualOverride || 0), keterangan };
+  }
+
+  function tambahKeAntrian() {
+    const it = itemSaatIni();
+    if (!it) { setError("Pilih produk dan isi jumlahnya dulu sebelum menambah item."); return; }
+    setAntrian(prev => [...prev, it]);
+    setProdukId(""); setProductSearch(""); setJumlah(""); setKeterangan(""); setHargaDiubahManual(false);
+    setError("");
+  }
+
+  function hapusDariAntrian(idx) {
+    setAntrian(prev => prev.filter((_, i) => i !== idx));
+  }
 
   return (
     <Overlay onBatal={onBatal}>
@@ -3395,10 +3608,39 @@ function ModalJual({ products, onBatal, onSimpan, bisaLihatHarga = true }) {
           </div>
         </Field>
       )}
+
+      {bisaAntri && antrian.length > 0 && (
+        <div style={{ marginTop: 14, background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: 10 }}>
+          <div style={{ fontSize: 11, color: "#8B95A1", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>{antrian.length} item siap disimpan</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {antrian.map((it, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1D2329", borderRadius: 6, padding: "6px 10px", fontSize: 12.5 }}>
+                <span><b>{it.nama}</b> <span style={{ color: "#8B95A1" }}>• {it.kodeBarang} • {it.jumlah}x{bisaLihatHarga && it.hargaJualOverride ? ` • ${rupiah(it.hargaJualOverride)}` : ""}</span></span>
+                <button type="button" onClick={() => hapusDariAntrian(idx)} className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onBatal} style={btnSecondary}>Batal</button>
-        <button onClick={() => { const err = onSimpan(produkId, Number(jumlah || 0), tanggal, Number(hargaJualOverride || 0), keterangan, transactionType, tujuanGudang); if (err) setError(err); }} className="btn-primary-glow" style={btnPrimary}>Simpan Transaksi</button>
+        {bisaAntri && (
+          <button onClick={tambahKeAntrian} style={{ ...btnSecondary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Tambah Item</button>
+        )}
+        <button onClick={() => {
+          if (bisaAntri && antrian.length > 0) {
+            const daftarAkhir = itemSaatIni() ? [...antrian, itemSaatIni()] : antrian;
+            const err = onSimpanBanyak(daftarAkhir, tanggal, transactionType);
+            if (err) setError(err);
+            return;
+          }
+          const err = onSimpan(produkId, Number(jumlah || 0), tanggal, Number(hargaJualOverride || 0), keterangan, transactionType, tujuanGudang);
+          if (err) setError(err);
+        }} className="btn-primary-glow" style={btnPrimary}>
+          {bisaAntri && antrian.length > 0 ? `Simpan Semua (${itemSaatIni() ? antrian.length + 1 : antrian.length})` : "Simpan Transaksi"}
+        </button>
       </div>
     </Overlay>
   );
