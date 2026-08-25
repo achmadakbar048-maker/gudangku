@@ -1342,6 +1342,56 @@ export default function InventoryApp() {
     return null;
   }
 
+  // Catat beberapa item Masuk/Keluar sekaligus (fitur "Tambah Item" di Mutasi Barang).
+  // Transfer tidak didukung batch di sini -- tetap satu per satu lewat catatMutasi.
+  function catatMutasiBanyak(daftarItem, tanggal, jenis) {
+    const stokBerjalan = {};
+    for (let i = 0; i < daftarItem.length; i++) {
+      const it = daftarItem[i];
+      const p = products.find(x => x.id === it.produkId);
+      if (!p) return `Item ${i + 1}: produk tidak ditemukan.`;
+      if (it.jumlah <= 0) return `Item ${i + 1} (${p.nama}): jumlah harus lebih dari 0.`;
+      if (!(it.produkId in stokBerjalan)) stokBerjalan[it.produkId] = p.stok;
+      stokBerjalan[it.produkId] += jenis === "Masuk" ? it.jumlah : -it.jumlah;
+      if (jenis === "Keluar" && stokBerjalan[it.produkId] < 0) {
+        return `Item ${i + 1} (${p.nama}): stok tidak mencukupi untuk total ${it.jumlah} ${satuanSingkat(p.satuan)} di batch ini.`;
+      }
+    }
+
+    let nomorMutasiBerjalan = nextMutasiNo;
+    const tgl = new Date(tanggal);
+    const ymd = `${tgl.getFullYear()}${pad(tgl.getMonth() + 1, 2)}${pad(tgl.getDate(), 2)}`;
+    const tanggalIso = tgl.toISOString();
+    const produkUpdateMap = {};
+    const mutasiBaruSemua = [];
+
+    daftarItem.forEach(it => {
+      const p = produkUpdateMap[it.produkId] || products.find(x => x.id === it.produkId);
+      const hargaFinal = it.hargaSatuan > 0 ? it.hargaSatuan : p.hargaBeli;
+      const stokSebelum = p.stok;
+      const stokSesudah = jenis === "Masuk" ? p.stok + it.jumlah : p.stok - it.jumlah;
+      const kode = `MUT-${ymd}-${pad(nomorMutasiBerjalan, 4)}`;
+      nomorMutasiBerjalan += 1;
+
+      mutasiBaruSemua.push({
+        id: uid(), kode, jenis, produkId: it.produkId, namaProduk: p.nama, kodeBarang: p.kodeBarang, kategori: p.kategori,
+        gudang: p.gudang, jumlah: it.jumlah, satuan: p.satuan, keterangan: it.keterangan || "",
+        oleh: currentUser.nama, stokSebelum, stokSesudah, tanggal: tanggalIso, hargaSatuan: hargaFinal,
+      });
+      produkUpdateMap[it.produkId] = { ...p, stok: stokSesudah, hargaBeli: jenis === "Masuk" ? hargaFinal : p.hargaBeli };
+    });
+
+    const produkUpdateSemua = Object.values(produkUpdateMap);
+    setProducts(prev => prev.map(x => produkUpdateMap[x.id] || x));
+    simpanBanyakKeSupabase("products", produkUpdateSemua);
+    setMutasi(prev => [...mutasiBaruSemua, ...prev]);
+    simpanBanyakKeSupabase("mutasi", mutasiBaruSemua);
+    setNextMutasiNo(nomorMutasiBerjalan);
+    simpanCounterKeSupabase(nomorMutasiBerjalan);
+
+    pushToast("success", `${daftarItem.length} item barang ${jenis.toLowerCase()} berhasil dicatat sekaligus.`);
+    return null;
+  }
   // Stok Opname: bandingkan stok fisik hasil hitung langsung dengan stok sistem,
   // lalu catat selisihnya sebagai mutasi Masuk (kalau fisik lebih banyak) atau
   // Keluar (kalau fisik lebih sedikit) sekaligus, dalam satu batch.
@@ -1654,7 +1704,8 @@ export default function InventoryApp() {
 
       {modalMutasi && (
         <ModalMutasi products={products} isAdmin={isAdmin} currentUser={currentUser} onBatal={() => setModalMutasi(false)} bisaLihatHarga={bisaLihatHarga}
-          onSimpan={(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang) => { const err = catatMutasi(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang); if (!err) setModalMutasi(false); return err; }} />
+          onSimpan={(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang) => { const err = catatMutasi(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang); if (!err) setModalMutasi(false); return err; }}
+          onSimpanBanyak={(daftarItem, tanggal, jenis) => { const err = catatMutasiBanyak(daftarItem, tanggal, jenis); if (!err) setModalMutasi(false); return err; }} />
       )}
 
       {invoiceTampil && (
@@ -2550,13 +2601,18 @@ function OpnameView({ produk, warnaKategoriMap, namaKategori, onSimpan }) {
 }
 
 // ============================================================
-function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
+function MutasiView({ mutasi, onCatat, onCetak, isAdmin, bisaLihatHarga = true }) {
   const [filterJenis, setFilterJenis] = useState("Semua");
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterGudang, setFilterGudang] = useState("Semua");
   const [searchQuery, setSearchQuery] = useState("");
   const [tanggalMulai, setTanggalMulai] = useState("");
   const [tanggalSelesai, setTanggalSelesai] = useState("");
+  const [tanggalCek, setTanggalCek] = useState(new Date().toISOString().slice(0, 10));
+  const nilaiTanggalCek = useMemo(() => mutasi
+    .filter(m => m.tanggal.slice(0, 10) === tanggalCek)
+    .reduce((s, m) => s + m.jumlah * (m.hargaSatuan || 0), 0), [mutasi, tanggalCek]);
+  const jumlahTransaksiTanggalCek = useMemo(() => mutasi.filter(m => m.tanggal.slice(0, 10) === tanggalCek).length, [mutasi, tanggalCek]);
   const daftar = useMemo(() => {
     return mutasi.filter(m => {
       if (filterJenis !== "Semua" && m.jenis !== filterJenis) return false;
@@ -2594,6 +2650,19 @@ function MutasiView({ mutasi, onCatat, onCetak, isAdmin }) {
         </div>
       </div>
       <BarcodeDivider />
+
+      {bisaLihatHarga && (
+        <div className="no-print" style={{
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16,
+          background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: "12px 16px",
+        }}>
+          <span style={{ fontSize: 12.5, color: "#8B95A1" }}>Cek total nilai mutasi pada tanggal:</span>
+          <input type="date" value={tanggalCek} onChange={e => setTanggalCek(e.target.value)} style={{ ...inputStyle, width: 165 }} />
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 17, fontWeight: 700, color: "#3FA796" }}>{rupiah(nilaiTanggalCek)}</span>
+          <span style={{ fontSize: 12, color: "#8B95A1" }}>dari {jumlahTransaksiTanggalCek} transaksi hari itu</span>
+          <span style={{ fontSize: 11, color: "#5C6570", marginLeft: "auto" }}>Ganti tanggal untuk melihat nilai hari lain</span>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
         <KartuKPI ikon={PackagePlus} label="Total Barang Masuk" nilai={totalMasuk} sub="seluruh histori" warna="#3FA796" />
@@ -2667,6 +2736,14 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
   const [filterGudang, setFilterGudang] = useState("Semua");
   const [tanggalMulai, setTanggalMulai] = useState("");
   const [tanggalSelesai, setTanggalSelesai] = useState("");
+  const [tanggalCek, setTanggalCek] = useState(new Date().toISOString().slice(0, 10));
+  const nilaiTanggalCek = useMemo(() => sales
+    .filter(s => s.tanggal.slice(0, 10) === tanggalCek)
+    .reduce((sum, s) => sum + (s.total || 0), 0), [sales, tanggalCek]);
+  const profitTanggalCek = useMemo(() => sales
+    .filter(s => s.tanggal.slice(0, 10) === tanggalCek)
+    .reduce((sum, s) => sum + (s.profit || 0), 0), [sales, tanggalCek]);
+  const jumlahTransaksiTanggalCek = useMemo(() => sales.filter(s => s.tanggal.slice(0, 10) === tanggalCek).length, [sales, tanggalCek]);
 
   const daftar = useMemo(() => sales.filter(s => {
     if (filterGudang !== "Semua" && s.gudang !== filterGudang) return false;
@@ -2696,6 +2773,19 @@ function SalesView({ sales, isAdmin, onJualBaru, onEdit, onHapus, bisaLihatHarga
         </div>
       </div>
       <BarcodeDivider />
+
+      {bisaLihatHarga && (
+        <div className="no-print" style={{
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16,
+          background: "#1D2329", border: "1px solid #2A3138", borderRadius: 10, padding: "12px 16px",
+        }}>
+          <span style={{ fontSize: 12.5, color: "#8B95A1" }}>Cek total nilai barang keluar pada tanggal:</span>
+          <input type="date" value={tanggalCek} onChange={e => setTanggalCek(e.target.value)} style={{ ...inputStyle, width: 165 }} />
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 17, fontWeight: 700, color: "#3FA796" }}>{rupiah(nilaiTanggalCek)}</span>
+          <span style={{ fontSize: 12, color: "#8B95A1" }}>profit {rupiah(profitTanggalCek)} • {jumlahTransaksiTanggalCek} transaksi</span>
+          <span style={{ fontSize: 11, color: "#5C6570", marginLeft: "auto" }}>Ganti tanggal untuk melihat nilai hari lain</span>
+        </div>
+      )}
 
       <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
         <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari produk, kode, gudang, keterangan..." style={{ ...inputStyle, minWidth: 240, flex: 1 }} />
@@ -3297,7 +3387,7 @@ function ModalKategori({ categories, products, onBatal, onTambah, onEdit, onHapu
 }
 
 // ============================================================
-function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLihatHarga = true }) {
+function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, onSimpanBanyak, bisaLihatHarga = true }) {
   const [gudangPilihan, setGudangPilihan] = useState(isAdmin ? GUDANG[0] : currentUser.gudang);
   const produkGudang = useMemo(() => products.filter(p => p.gudang === gudangPilihan), [products, gudangPilihan]);
   const [jenis, setJenis] = useState("Masuk");
@@ -3310,7 +3400,9 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
   const [hargaSatuan, setHargaSatuan] = useState("");
   const [hargaDiubahManual, setHargaDiubahManual] = useState(false);
   const [tujuanGudang, setTujuanGudang] = useState(() => GUDANG.find(g => g !== (isAdmin ? GUDANG[0] : currentUser.gudang)) || GUDANG[0]);
+  const [antrian, setAntrian] = useState([]);
   const [error, setError] = useState("");
+  const bisaAntri = jenis !== "Transfer";
 
   useEffect(() => {
     const p0 = produkGudang[0];
@@ -3341,6 +3433,23 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
     setProdukQuery(p.nama);
     setHargaDiubahManual(false);
     setSaranTerbuka(false);
+  }
+
+  function itemSaatIni() {
+    if (!produkId || !jumlah || Number(jumlah) <= 0) return null;
+    return { produkId, nama: produkDipilih?.nama, kodeBarang: produkDipilih?.kodeBarang, jumlah: Number(jumlah), hargaSatuan: Number(hargaSatuan || 0), keterangan };
+  }
+
+  function tambahKeAntrian() {
+    const it = itemSaatIni();
+    if (!it) { setError("Pilih produk dan isi jumlahnya dulu sebelum menambah item."); return; }
+    setAntrian(prev => [...prev, it]);
+    setProdukId(""); setProdukQuery(""); setJumlah(1); setKeterangan(""); setHargaDiubahManual(false);
+    setError("");
+  }
+
+  function hapusDariAntrian(idx) {
+    setAntrian(prev => prev.filter((_, i) => i !== idx));
   }
 
   return (
@@ -3443,15 +3552,40 @@ function ModalMutasi({ products, isAdmin, currentUser, onBatal, onSimpan, bisaLi
         </Field>
       </div>
 
+      {bisaAntri && antrian.length > 0 && (
+        <div style={{ marginTop: 14, background: "#171B20", border: "1px solid #2A3138", borderRadius: 8, padding: 10 }}>
+          <div style={{ fontSize: 11, color: "#8B95A1", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>{antrian.length} item siap disimpan</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {antrian.map((it, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1D2329", borderRadius: 6, padding: "6px 10px", fontSize: 12.5 }}>
+                <span><b>{it.nama}</b> <span style={{ color: "#8B95A1" }}>• {it.kodeBarang} • {it.jumlah}x{bisaLihatHarga && it.hargaSatuan ? ` • ${rupiah(it.hargaSatuan)}` : ""}</span></span>
+                <button type="button" onClick={() => hapusDariAntrian(idx)} className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && <div style={{ color: "#E2574C", fontSize: 13, marginTop: 10 }}>{error}</div>}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onBatal} style={btnSecondary}>Batal</button>
+        {bisaAntri && (
+          <button onClick={tambahKeAntrian} style={{ ...btnSecondary, display: "flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Tambah Item</button>
+        )}
         <button onClick={() => {
+          if (bisaAntri && antrian.length > 0) {
+            const daftarAkhir = itemSaatIni() ? [...antrian, itemSaatIni()] : antrian;
+            const err = onSimpanBanyak(daftarAkhir, tanggal, jenis);
+            if (err) setError(err);
+            return;
+          }
           if (!produkId) { setError("Pilih produk yang sesuai dari daftar terlebih dahulu."); return; }
           const err = onSimpan(jenis, produkId, jumlah, tanggal, keterangan, null, Number(hargaSatuan || 0), tujuanGudang);
           if (err) setError(err);
-        }} className="btn-primary-glow" style={btnPrimary}>Simpan & Buat Invoice</button>
+        }} className="btn-primary-glow" style={btnPrimary}>
+          {bisaAntri && antrian.length > 0 ? `Simpan Semua (${itemSaatIni() ? antrian.length + 1 : antrian.length})` : "Simpan & Buat Invoice"}
+        </button>
       </div>
     </Overlay>
   );
