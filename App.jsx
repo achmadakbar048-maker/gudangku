@@ -1266,6 +1266,40 @@ export default function InventoryApp() {
     return null;
   }
 
+  function hapusRiwayatHargaEntry(entryId) {
+    setRiwayatHarga(prev => prev.filter(r => r.id !== entryId));
+    hapusDariSupabase("riwayat_harga", entryId);
+    pushToast("info", "Entri riwayat harga dihapus.");
+  }
+
+  // Hapus satu baris mutasi -- stok yang pernah berubah karena mutasi itu dikembalikan.
+  // Kalau ini bagian dari Transfer (punya transferId), kedua sisinya (Keluar di gudang asal
+  // & Masuk di gudang tujuan) ikut dihapus & dibalikkan sekaligus, supaya tidak ada transfer
+  // yang cuma sebelah jalan.
+  function hapusMutasi(id) {
+    const m = mutasi.find(x => x.id === id);
+    if (!m) return;
+    const terkait = m.transferId ? mutasi.filter(x => x.transferId === m.transferId) : [m];
+
+    const produkUpdateMap = {};
+    terkait.forEach(rec => {
+      const p = produkUpdateMap[rec.produkId] || products.find(x => x.id === rec.produkId);
+      if (!p) return;
+      const stokBaru = rec.jenis === "Masuk" ? p.stok - rec.jumlah : p.stok + rec.jumlah;
+      produkUpdateMap[rec.produkId] = { ...p, stok: Math.max(0, stokBaru) };
+    });
+
+    const produkUpdateSemua = Object.values(produkUpdateMap);
+    if (produkUpdateSemua.length) {
+      setProducts(prev => prev.map(x => produkUpdateMap[x.id] || x));
+      simpanBanyakKeSupabase("products", produkUpdateSemua);
+    }
+    const idTerkait = new Set(terkait.map(r => r.id));
+    setMutasi(prev => prev.filter(x => !idTerkait.has(x.id)));
+    terkait.forEach(rec => hapusDariSupabase("mutasi", rec.id));
+    pushToast("info", terkait.length > 1 ? "Transfer (kedua sisi) dihapus & stok disesuaikan kembali." : "Riwayat mutasi dihapus & stok disesuaikan kembali.");
+  }
+
   // ---------- Logic Mutasi Stok (Barang Masuk / Keluar) ----------
   function catatMutasi(jenis, produkId, jumlah, tanggal, keterangan, satuanOverride, hargaSatuan, tujuanGudang) {
     const p = products.find(x => x.id === produkId);
@@ -1639,13 +1673,13 @@ export default function InventoryApp() {
 
         {tab === "masterdata" && isAdmin && (
           <div className="tab-fade" key="masterdata">
-            <MasterDataView produk={products} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} />
+            <MasterDataView produk={products} warnaKategoriMap={warnaKategoriMap} bisaLihatHarga={bisaLihatHarga} onHapus={hapusProduk} />
           </div>
         )}
 
         {tab === "mutasi" && (
           <div className="tab-fade" key="mutasi">
-            <MutasiView mutasi={mutasiGudang} isAdmin={isAdmin} onCatat={() => setModalMutasi(true)} onCetak={cetakInvoiceMutasi} bisaLihatHarga={bisaLihatHarga} />
+            <MutasiView mutasi={mutasiGudang} isAdmin={isAdmin} onCatat={() => setModalMutasi(true)} onCetak={cetakInvoiceMutasi} onHapus={hapusMutasi} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
 
@@ -1672,7 +1706,7 @@ export default function InventoryApp() {
 
         {tab === "riwayat" && (
           <div className="tab-fade" key="riwayat">
-            <RiwayatHargaView riwayat={riwayatHarga} products={products} produkTerpilih={modalRiwayat} isAdmin={isAdmin} onEditEntry={setModalEditRiwayat} bisaLihatHarga={bisaLihatHarga} />
+            <RiwayatHargaView riwayat={riwayatHarga} products={products} produkTerpilih={modalRiwayat} isAdmin={isAdmin} onEditEntry={setModalEditRiwayat} onHapus={hapusRiwayatHargaEntry} bisaLihatHarga={bisaLihatHarga} />
           </div>
         )}
       </div>
@@ -2414,7 +2448,7 @@ const iconBtn = { background: "none", border: "1px solid #2A3138", borderRadius:
 // ============================================================
 // Master Data: daftar seluruh barang yang sudah masuk dan belum keluar (stok saat ini)
 // dari SEMUA gudang, terlihat sama oleh semua akun -- bukan cuma gudang milik akun yang login.
-function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga }) {
+function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga, onHapus }) {
   const [search, setSearch] = useState("");
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterGudang, setFilterGudang] = useState("Semua");
@@ -2471,6 +2505,7 @@ function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga }) {
             <tr style={{ background: "#171B20", color: "#8B95A1", fontSize: 12, textTransform: "uppercase" }}>
               <th>Kode Barang</th><th>Produk</th><th>Kategori</th><th>Gudang</th><th>Stok Saat Ini</th><th>Status</th><th>Supplier</th>
               {bisaLihatHarga && <th>Nilai Stok</th>}
+              <th className="no-print"></th>
             </tr>
           </thead>
           <tbody>
@@ -2484,9 +2519,12 @@ function MasterDataView({ produk, warnaKategoriMap, bisaLihatHarga }) {
                 <td><IndikatorStok stok={p.stok} stokMin={p.stokMin} satuan={p.satuan} /></td>
                 <td style={{ color: "#8B95A1", fontSize: 12 }}>{p.supplier || "-"}</td>
                 {bisaLihatHarga && <td style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{rupiah(p.stok * p.hargaBeli)}</td>}
+                <td className="no-print">
+                  {onHapus && <button onClick={() => onHapus(p.id)} title="Hapus" className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>}
+                </td>
               </tr>
             ))}
-            {daftar.length === 0 && <tr><td colSpan={bisaLihatHarga ? 8 : 7} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada barang yang cocok dengan pencarian.</td></tr>}
+            {daftar.length === 0 && <tr><td colSpan={bisaLihatHarga ? 9 : 8} style={{ textAlign: "center", padding: 30, color: "#5C6570" }}>Tidak ada barang yang cocok dengan pencarian.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2601,7 +2639,7 @@ function OpnameView({ produk, warnaKategoriMap, namaKategori, onSimpan }) {
 }
 
 // ============================================================
-function MutasiView({ mutasi, onCatat, onCetak, isAdmin, bisaLihatHarga = true }) {
+function MutasiView({ mutasi, onCatat, onCetak, onHapus, isAdmin, bisaLihatHarga = true }) {
   const [filterJenis, setFilterJenis] = useState("Semua");
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterGudang, setFilterGudang] = useState("Semua");
@@ -2718,7 +2756,10 @@ function MutasiView({ mutasi, onCatat, onCetak, isAdmin, bisaLihatHarga = true }
                 <td style={{ color: "#8B95A1", fontSize: 12, maxWidth: 200 }}>{m.keterangan || "-"}</td>
                 <td style={{ color: "#8B95A1", fontSize: 12 }}>{m.oleh}</td>
                 <td className="no-print">
-                  <button onClick={() => onCetak(m)} title="Cetak invoice" className="icon-btn-hover" style={iconBtn}><Printer size={13} /></button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => onCetak(m)} title="Cetak invoice" className="icon-btn-hover" style={iconBtn}><Printer size={13} /></button>
+                    {isAdmin && onHapus && <button onClick={() => onHapus(m.id)} title="Hapus & kembalikan stok" className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -2993,7 +3034,7 @@ function ReportsView({ trenHarian, distribusiKategori, products, warnaKategoriMa
 }
 
 // ============================================================
-function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEntry, bisaLihatHarga = true }) {
+function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEntry, onHapus, bisaLihatHarga = true }) {
   const [filterProduk, setFilterProduk] = useState(produkTerpilih && produkTerpilih !== "semua" ? produkTerpilih : "semua");
   const [filterField, setFilterField] = useState("Semua");
   const [searchQuery, setSearchQuery] = useState("");
@@ -3096,6 +3137,9 @@ function RiwayatHargaView({ riwayat, products, produkTerpilih, isAdmin, onEditEn
                   <td className="no-print">
                     {isAdmin && onEditEntry && (
                       <button onClick={() => onEditEntry(r)} title="Edit riwayat harga" className="icon-btn-hover" style={iconBtn}><Pencil size={13} /></button>
+                    )}
+                    {isAdmin && onHapus && (
+                      <button onClick={() => onHapus(r.id)} title="Hapus entri" className="icon-btn-hover" style={{ ...iconBtn, color: "#E2574C" }}><Trash2 size={13} /></button>
                     )}
                   </td>
                 </tr>
